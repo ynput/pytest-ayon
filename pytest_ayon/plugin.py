@@ -9,13 +9,14 @@ TODO:
     - Use ayon_python_api functions than REST API calls.
 
 """
+from __future__ import annotations
 import contextlib
 import os
 import random
 import secrets
 from collections import namedtuple
 from dataclasses import dataclass
-from typing import List
+from typing import List, Optional
 
 import pytest
 import requests
@@ -31,13 +32,24 @@ class IdNamePair(object):
 
 @dataclass
 class ProjectInfo(object):
+    """Project information.
+
+    Deprecated:
+        folder, task, product, version are deprecated. Use their
+        entity counterparts instead.
+
+    """
     project_name: str
     project_code: str
     project_root_folders: dict[str, str]
     folder: IdNamePair
+    folder_entity: Optional[dict]
     task: IdNamePair
+    task_entity: Optional[dict]
     product: IdNamePair
+    product_entity: Optional[dict]
     version: IdNamePair
+    version_entity: Optional[dict]
     representations: List[IdNamePair]
     links: List[str]
 
@@ -252,37 +264,43 @@ def project(printer, ayon_connection_env) -> pytest.fixture:
         })
     assert response.status_code == 201
     folder_id = response.json()["id"]
+    response = session.get(
+        f"{server_url}/api/projects/{project_name}/folders/{folder_id}")
+    assert response.status_code == 200
+    folder_entity = response.json()
+    printer(folder_entity)
+
 
     # Create a task
     response = session.post(
         f"{server_url}/api/projects/{project_name}/tasks", json={
             "name": task_name,
             "taskType": "rendering",
-            "folderId": folder_id,
+            "folderId": folder_entity["id"],
         })
     assert response.status_code == 201
-    task_id = response.json()["id"]
+    task_entity = response.json()
 
     # Create a product
     response = session.post(
         f"{server_url}/api/projects/{project_name}/products",
         json={
             "name": product_name,
-            "folderId": folder_id,
+            "folderId": folder_entity["id"],
             "productType": "render",
         })
     assert response.status_code == 201
-    product_id = response.json()["id"]
+    product_entity = response.json()
 
     # Create a version
     response = session.post(
         f"{server_url}/api/projects/{project_name}/versions", json={
             "version": version,
-            "productId": product_id,
-            "taskId": task_id,
+            "productId": product_entity["id"],
+            "taskId": task_entity["id"],
         })
     assert response.status_code == 201
-    version_id = response.json()["id"]
+    version_entity = response.json()
 
     # Create a representations
     representations = []
@@ -290,7 +308,7 @@ def project(printer, ayon_connection_env) -> pytest.fixture:
         representation_name = f"exr_{i}"
         rep_data = create_representation(
             project_name, project_code, folder_name, task_name,
-            product_name, version, version_id,
+            product_name, version, version_entity["id"],
             project_data["anatomy"]["templates"]["publish"],
             project_data["anatomy"]["roots"][0]["windows"],
             1001, random.randint(1020, 1200), representation_name
@@ -344,10 +362,14 @@ def project(printer, ayon_connection_env) -> pytest.fixture:
         project_name=project_name,
         project_code=project_code,
         project_root_folders=project_data["anatomy"]["roots"][0],
-        folder=IdNamePair(name=folder_name, id=folder_id),
-        task=IdNamePair(name=task_name, id=task_id),
-        product=IdNamePair(name=product_name, id=product_id),
-        version=IdNamePair(name=f"v{version:03d}", id=version_id),
+        folder=IdNamePair(name=folder_name, id=folder_entity["id"]),
+        folder_entity=folder_entity,
+        task=IdNamePair(name=task_name, id=task_entity["id"]),
+        task_entity=task_entity,
+        product=IdNamePair(name=product_name, id=product_entity["id"]),
+        product_entity=product_entity,
+        version=IdNamePair(name=f"v{version:03d}", id=version_entity["id"]),
+        version_entity=version_entity,
         representations=representations,
         links=links
     )

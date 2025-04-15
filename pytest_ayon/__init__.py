@@ -1,8 +1,9 @@
 from .addons import build_addon_package, imprint_test_version, installed_addon
 from .plugin import (addon_version, ayon_connection_env, ayon_server_session,
-                     base_dir, project, project_root_path)
+                     base_dir, project, project_root_path, ProjectInfo)
 
 __all__ = [
+    "ProjectInfo",
     "project_root_path",
     "base_dir",
     "addon_version",
