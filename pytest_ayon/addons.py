@@ -1,10 +1,13 @@
 """Fixtures for addons."""
+from __future__ import annotations
+
 import contextlib
 import hashlib
 import os
 import subprocess
 import time
 from pathlib import Path
+from typing import Generator
 
 import pytest
 import requests
@@ -13,12 +16,17 @@ from .utils import replace_string_in_file
 
 
 @pytest.fixture(scope="session")
-def imprint_test_version(project_root_path, addon_version):
+def imprint_test_version(
+        project_root_path: str, addon_version: str) -> Generator[str, None, str]:
     """Imprint a test version of the package.
 
     This fixture will replace the version in the package.py file
     with a test version. This is useful for testing the package
     on the server without affecting existing addon installations.
+
+    Args:
+        project_root_path (str): The project root path.
+        addon_version (dict): The addon version.
 
     Yields:
         str: The test version of the package.
@@ -77,7 +85,9 @@ def build_addon_package(
     printer_session(stdout.decode())
     printer_session(stderr.decode())
 
-    assert process.returncode == 0, f"Script failed with return code: {process.returncode}"
+    assert process.returncode == 0, (
+        f"Script failed with return code: {process.returncode}")
+
     return imprint_test_version, tmp_path
 
 
@@ -98,7 +108,7 @@ def _wait_for_the_event(
 
     """
     session = requests.Session()
-    session.headers.update({'x-api-key': api_key})
+    session.headers.update({"x-api-key": api_key})
 
     max_tries = tries
     try_count = 0
@@ -118,16 +128,22 @@ def _wait_for_the_event(
     return response.json()
 
 
-def _wait_for_server_restart(server_url, api_key):
+def _wait_for_server_restart(server_url: str, api_key: str) -> None:
     """Wait for the server to restart.
 
     This will ask server and wait for the server to restart.
+
+    Args:
+        server_url (str): The server URL.
+        api_key (str): The API key.
+
     """
     session = requests.Session()
-    session.headers.update({'x-api-key': api_key})
+    session.headers.update({"x-api-key": api_key})
 
     response = session.post(f"{server_url}/api/system/restart")
-    assert response.status_code == 204, f"Failed to restart server: {response.text}"  # noqa: E501
+    assert response.status_code == 204, (
+        f"Failed to restart server: {response.text}")
 
     time.sleep(1)
 
@@ -138,10 +154,10 @@ def _wait_for_server_restart(server_url, api_key):
             response = session.get(f"{server_url}/api/info")
             # if motd is present, server is up
             if "version" in response.json():
-                return True
+                return
         time.sleep(6)
 
-    assert False, "Server did not restart after 60 seconds."
+    pytest.fail("Server did not restart after 60 seconds.")
 
 
 @pytest.fixture
@@ -162,6 +178,9 @@ def installed_addon(
         build_addon_package (tuple[str, pathlib.Path]): The test version and
             the path to the package.
         printer_session (function): The printer function.
+
+    Yields:
+        str: The test version of the package.
 
     """
     server_url, api_key = ayon_connection_env

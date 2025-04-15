@@ -1,8 +1,13 @@
-# -*- coding: utf-8 -*-
 """Package to hold utility functions used in tests."""
-import uuid
+from __future__ import annotations
+
 import hashlib
 import random
+import uuid
+
+STATUS_OK = 200
+STATUS_CREATED = 201
+STATUS_NO_CONTENT = 204
 
 
 def create_file_list(

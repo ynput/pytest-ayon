@@ -1,8 +1,10 @@
-[tool.poetry]
+[project]
 name = "pytest-ayon"
-version = "0.1.0"
+version = "0.1.1"
 description = "A pytest plugin for testing AYON and its components."
-authors = ["YNPUT, s.r.o. <team@ynput.io>"]
+authors = [
+    {name = "YNPUT, s.r.o.", email="team@ynput.io"},
+]
 readme = "README.md"
 license = "Apache-2.0"
 repository = "https://github.com/ynput/pytest-ayon"
@@ -17,29 +19,30 @@ classifiers = [
     "Topic :: Software Development :: Testing",
     "Framework :: Pytest",
 ]
+requires-python = ">=3.9"
+dependencies = [
+    "pytest",
+    "ayon-python-api",
+    "requests ~= 2.17"
+]
 
-[tool.poetry.plugins.pytest11]
+[project.entry-points.pytest11]
 ayon = "pytest_ayon.plugin"
 
-[tool.poetry.dependencies]
-python = ">=3.6.5"
-pytest = "^7.0"
-ayon-python-api = "*"
-requests = "^2.17"
-
-[tool.poetry.dev-dependencies]
-python= "^3.9"
-ruff = "^0.0.17"
-pre-commit = "^2.17"
-codespell = "^2"
-pydantic = "^1.9"
-pytest-cov = "^4.0"
-pytest-print = "^0.3"
-pydocstyle = "*"
+[project.optional-dependencies]
+dev = [
+    "ruff ~= 0.11.4",
+    "pre-commit",
+    "codespell",
+    "pydantic~=1.9",
+    "pytest-cov",
+    "pytest-print",
+    "mypy",
+]
 
 [build-system]
-requires = ["poetry-core"]
-build-backend = "poetry.core.masonry.api"
+requires = ["hatchling"]
+build-backend = "hatchling.build"
 
 [tool.ruff]
 # Exclude a variety of commonly ignored directories.
@@ -81,9 +84,33 @@ indent-width = 4
 target-version = "py39"
 
 [tool.ruff.lint]
-# Enable Pyflakes (`F`) and a subset of the pycodestyle (`E`)  codes by default.
-select = ["E4", "E7", "E9", "F"]
-ignore = []
+preview = true  # this is needed for linting empty lines, etc.
+
+pydocstyle.convention = "google"
+
+select = ["ALL"]
+ignore = [
+    "PTH",
+    "ANN101",  # must be set in older version of ruff
+    "ANN204",
+    "COM812",
+    "S603",
+    "ERA001",
+    "TRY003",
+    "UP006",   # support for older python version (type vs. Type)
+    "UP007",   # ..^
+    "UP035",   # ..
+    "UP045",   # Use `X | None` for type annotations
+    "ARG002",
+    "INP001",  # add `__init__.py` to namespaced package
+    "FIX002",  # FIX all TODOs
+    "TD003",   # missing issue link
+    "S404",    # subprocess module is possibly insecure
+    "PLC0415", # import must be on top of the file
+    "CPY001",  # missing copyright header
+    "UP045",
+    "S101",    # use of assert
+]
 # Allow fix for all enabled rules (when `--fix`) is provided.
 fixable = ["ALL"]
 unfixable = []
