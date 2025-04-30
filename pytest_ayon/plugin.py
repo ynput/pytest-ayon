@@ -10,12 +10,12 @@ TODO:
 
 """
 import contextlib
+import dataclasses
 import os
 import random
 import secrets
 from collections import namedtuple
-from dataclasses import dataclass
-from typing import List
+from typing import List, Optional
 
 import pytest
 import requests
@@ -23,23 +23,23 @@ import requests
 from .utils import create_representation
 
 
-@dataclass
+@dataclasses.dataclass
 class IdNamePair(object):
     id: str
     name: str
 
 
-@dataclass
+@dataclasses.dataclass
 class ProjectInfo(object):
     project_name: str
     project_code: str
     project_root_folders: dict[str, str]
-    folder: IdNamePair
-    task: IdNamePair
-    product: IdNamePair
-    version: IdNamePair
-    representations: List[IdNamePair]
-    links: List[str]
+    folder: Optional[IdNamePair] = None
+    task: Optional[IdNamePair] = None
+    product: Optional[IdNamePair] = None
+    version: Optional[IdNamePair] = None
+    representations: Optional[List[IdNamePair]] = dataclasses.field(default_factory=list)
+    links: Optional[List[str]] = dataclasses.field(default_factory=list)
 
 
 @pytest.fixture(scope="session")
@@ -356,4 +356,161 @@ def project(printer, ayon_connection_env) -> pytest.fixture:
     printer(f"tearing down project {project_name}...")
     response = session.delete(
         f"{server_url}/api/projects/{project_name}")
+    assert response.status_code == 204
+
+
+@pytest.fixture
+def empty_project(
+    request,
+    printer,
+    ayon_connection_env,
+    project_name: Optional[str] = None,
+    project_code: Optional[str] = None,
+    folder_types: List[str] = ("Asset", "Episode", "Sequence", "Shot"),
+    task_types: List[str] = ("rendering",),
+    statuses: List[str] = ("not_started",),
+) -> pytest.fixture:
+
+    server_url, api_key = ayon_connection_env
+    _token = secrets.token_hex(5)
+
+    values = {
+        "project_name": f"{_token}_test_project",
+        "project_code": f"TP_{_token[:3]}",
+        "folder_types": folder_types,
+        "task_types": task_types,
+        "statuses": statuses,
+    }
+
+    # set default values
+    if hasattr(request, "param"):
+        for attr, value in request.param.items():
+            values[attr] = value
+
+    printer(f"creating project {project_name}...")
+    session = requests.Session()
+    session.headers.update({'x-api-key': api_key})
+
+    project_data = {
+        "name": values["project_name"],
+        "code": values["project_code"],
+        "anatomy": {
+            "roots": [
+                {
+                    "name": "work",
+                    "windows": "C:/projects",
+                    "linux": "/mnt/share/projects",
+                    "darwin": "/Volumes/projects"
+                }
+            ],
+            "templates": {
+                "version_padding": 3,
+                "version": "v{version:0>{@version_padding}}",
+                "frame_padding": 4,
+                "frame": "{frame:0>{@frame_padding}}",
+                "work": [
+                    {
+                        "name": "default",
+                        "directory": "{root[work]}/{project[name]}/{hierarchy}/{folder[name]}/work/{task[name]}",
+                        "file": "{project[code]}_{folder[name]}_{task[name]}_{@version}<_{comment}>.{ext}"
+                    }
+                ],
+                "publish": [
+                    {
+                        "name": "default",
+                        "directory": "{root[work]}/{project[name]}/{hierarchy}/{folder[name]}/publish/{product[type]}/{product[name]}/v{version:0>3}",
+                        "file": "{project[code]}_{folder[name]}_{product[name]}_v{version:0>3}<_{output}><.{frame:0>4}><_{udim}>.{ext}"
+                    }
+                ],
+                "hero": [
+                    {
+                        "name": "default",
+                        "directory": "{root[work]}/{project[name]}/{hierarchy}/{folder[name]}/publish/{product[type]}/{product[name]}/hero",
+                        "file": "{project[code]}_{folder[name]}_{task[name]}_hero<_{comment}>.{ext}"
+                    }
+                ],
+            },
+            "attributes": {
+                "fps": 25,
+                "resolutionWidth": 1920,
+                "resolutionHeight": 1080,
+                "pixelAspect": 1,
+                "clipIn": 1,
+                "clipOut": 1,
+                "frameStart": 1001,
+                "frameEnd": 1050,
+                "handleStart": 0,
+                "handleEnd": 0,
+                "startDate": "2021-01-01T00:00:00+00:00",
+                "endDate": "2021-01-01T00:00:00+00:00",
+                "description": "A very nice entity",
+                "applications": [],
+                "tools": []
+            },
+            "folder_types": [
+                {
+                    "name": folder_type.capitalize(),
+                    "icon": "folder",
+                    "original_name": folder_type.capitalize(),
+                } for folder_type in values["folder_types"]
+            ],
+            "task_types": [
+                {
+                    "name": task_type.lower(),
+                    "shortName": task_type.lower(),
+                    "icon": "",
+                    "original_name": task_type.lower(),
+                } for task_type in values["task_types"]
+            ],
+            "linkTypes": [
+                {
+                    "name": "relationship|representation|representation",
+                    "link_type": "relationship",
+                    "input_type": "representation",
+                    "output_type": "representation",
+                    "data": {
+                        "color": "#73149F",
+                    }
+                }
+            ],
+            "statuses": [
+                {
+                    "name": status.lower(),
+                    "shortName": status.lower(),
+                    "state": status.lower(),
+                    "icon": "",
+                    "color": "#cacaca",
+                    "original_name": "string"
+                } for status in values["statuses"]
+            ]
+        },
+        "library": False
+    }
+    response = session.post(
+        f"{server_url}/api/projects", json=project_data)
+    assert response.status_code == 201
+
+    # due to the bug in AYON server, create `relationship` link type
+    # TODO: remove this once the bug is fixed
+    response = session.put(
+        (f'{server_url}/api/projects/{values["project_name"]}/links/types/'
+         "relationship|representation|representation"),
+        json={
+            "data": {
+                "color": "#73149F",
+            }
+        }
+    )
+    assert response.status_code == 204
+
+    yield ProjectInfo(
+        project_name=values["project_name"],
+        project_code=values["project_code"],
+        project_root_folders=project_data["anatomy"]["roots"][0],
+    )
+
+    # teardown the project
+    printer(f'tearing down project {values["project_name"]}...')
+    response = session.delete(
+        f'{server_url}/api/projects/{values["project_name"]}')
     assert response.status_code == 204
