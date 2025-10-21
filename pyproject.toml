@@ -91,7 +91,6 @@ pydocstyle.convention = "google"
 select = ["ALL"]
 ignore = [
     "PTH",
-    "ANN101",  # must be set in older version of ruff
     "ANN204",
     "COM812",
     "S603",

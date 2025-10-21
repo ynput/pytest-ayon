@@ -16,7 +16,7 @@ import os
 import random
 import secrets
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Generator, NamedTuple, Optional
+from typing import TYPE_CHECKING, Any, Generator, NamedTuple, Optional
 
 import pytest
 import requests
@@ -63,16 +63,16 @@ class ProjectInfo:
     project_name: str
     project_code: str
     project_root_folders: dict[str, str]
-    folder: IdNamePair
+    folder: Optional[IdNamePair]
     folder_entity: Optional[dict]
-    task: IdNamePair
+    task: Optional[IdNamePair]
     task_entity: Optional[dict]
-    product: IdNamePair
+    product: Optional[IdNamePair]
     product_entity: Optional[dict]
-    version: IdNamePair
+    version: Optional[IdNamePair]
     version_entity: Optional[dict]
-    representations: List[IdNamePair]
-    links: List[str]
+    representations: Optional[list[IdNamePair]]
+    links: Optional[list[str]]
 
 
 @pytest.fixture(scope="session")
@@ -450,23 +450,43 @@ def project(  # noqa: PLR0914, PLR0915
 
 
 @pytest.fixture
-def empty_project(
-    request,
-    printer,
-    ayon_connection_env,
+def empty_project(  # noqa: PLR0913, PLR0917
+    request: pytest.FixtureRequest,
+    printer: Any,  # noqa: ANN401 (fixture)
+    ayon_connection_env: tuple[str, str],
     project_name: Optional[str] = None,
     project_code: Optional[str] = None,
-    folder_types: List[str] = ("Asset", "Episode", "Sequence", "Shot"),
-    task_types: List[str] = ("rendering",),
-    statuses: List[str] = ("not_started",),
-) -> pytest.fixture:
+    folder_types: list[str] = ("Asset", "Episode", "Sequence", "Shot"),
+    task_types: list[str] = ("rendering",),
+    statuses: list[str] = ("not_started",),
+) -> Generator[ProjectInfo, None, None]:
+    """Set up an empty project and yield the project info.
 
+    This will create an empty project with the specified folder types,
+    task types, and statuses.
+
+    Args:
+        request: The pytest request fixture.
+        printer: The printer fixture.
+        ayon_connection_env: The AYON connection environment fixture.
+        project_name: The project name. If None, a random
+            name will be generated.
+        project_code: The project code. If None, a random
+            code will be generated.
+        folder_types: The folder types to create in the project.
+        task_types: The task types to create in the project.
+        statuses: The statuses to create in the project.
+
+    Yields:
+        ProjectInfo: The project information.
+
+    """
     server_url, api_key = ayon_connection_env
-    _token = secrets.token_hex(5)
+    token = secrets.token_hex(5)
 
     values = {
-        "project_name": f"{_token}_test_project",
-        "project_code": f"TP_{_token[:3]}",
+        "project_name": f"{token}_test_project",
+        "project_code": project_code or f"TP_{token[:3]}",
         "folder_types": folder_types,
         "task_types": task_types,
         "statuses": statuses,
@@ -474,12 +494,11 @@ def empty_project(
 
     # set default values
     if hasattr(request, "param"):
-        for attr, value in request.param.items():
-            values[attr] = value
+        values = dict(request.param.items())
 
     printer(f"creating project {project_name}...")
     session = requests.Session()
-    session.headers.update({'x-api-key': api_key})
+    session.headers.update({"x-api-key": api_key})
 
     project_data = {
         "name": values["project_name"],
@@ -501,22 +520,33 @@ def empty_project(
                 "work": [
                     {
                         "name": "default",
-                        "directory": "{root[work]}/{project[name]}/{hierarchy}/{folder[name]}/work/{task[name]}",
-                        "file": "{project[code]}_{folder[name]}_{task[name]}_{@version}<_{comment}>.{ext}"
+                        "directory": "{root[work]}/{project[name]}/"
+                                     "{hierarchy}/{folder[name]}/"
+                                     "work/{task[name]}",
+                        "file": "{project[code]}_{folder[name]}"
+                                "_{task[name]}_{@version}<_{comment}>.{ext}"
                     }
                 ],
                 "publish": [
                     {
                         "name": "default",
-                        "directory": "{root[work]}/{project[name]}/{hierarchy}/{folder[name]}/publish/{product[type]}/{product[name]}/v{version:0>3}",
-                        "file": "{project[code]}_{folder[name]}_{product[name]}_v{version:0>3}<_{output}><.{frame:0>4}><_{udim}>.{ext}"
+                        "directory": "{root[work]}/{project[name]}/"
+                                     "{hierarchy}/{folder[name]}/"
+                                     "publish/{product[type]}/"
+                                     "{product[name]}/v{version:0>3}",
+                        "file": "{project[code]}_{folder[name]}_"
+                                "{product[name]}_v{version:0>3}<_{output}>"
+                                "<.{frame:0>4}><_{udim}>.{ext}"
                     }
                 ],
                 "hero": [
                     {
                         "name": "default",
-                        "directory": "{root[work]}/{project[name]}/{hierarchy}/{folder[name]}/publish/{product[type]}/{product[name]}/hero",
-                        "file": "{project[code]}_{folder[name]}_{task[name]}_hero<_{comment}>.{ext}"
+                        "directory": "{root[work]}/{project[name]}/"
+                                     "{hierarchy}/{folder[name]}/publish/"
+                                     "{product[type]}/{product[name]}/hero",
+                        "file": "{project[code]}_{folder[name]}_"
+                                "{task[name]}_hero<_{comment}>.{ext}"
                     }
                 ],
             },
@@ -578,10 +608,10 @@ def empty_project(
     }
     response = session.post(
         f"{server_url}/api/projects", json=project_data)
-    assert response.status_code == 201
+    assert response.status_code == STATUS_CREATED
 
     # due to the bug in AYON server, create `relationship` link type
-    # TODO: remove this once the bug is fixed
+    # TODO (antirotor): remove this once the bug is fixed
     response = session.put(
         (f'{server_url}/api/projects/{values["project_name"]}/links/types/'
          "relationship|representation|representation"),
@@ -591,7 +621,7 @@ def empty_project(
             }
         }
     )
-    assert response.status_code == 204
+    assert response.status_code == STATUS_NO_CONTENT
 
     yield ProjectInfo(
         project_name=values["project_name"],
@@ -603,4 +633,4 @@ def empty_project(
     printer(f'tearing down project {values["project_name"]}...')
     response = session.delete(
         f'{server_url}/api/projects/{values["project_name"]}')
-    assert response.status_code == 204
+    assert response.status_code == STATUS_NO_CONTENT
