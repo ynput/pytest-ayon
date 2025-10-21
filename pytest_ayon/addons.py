@@ -2,12 +2,11 @@
 from __future__ import annotations
 
 import contextlib
-import hashlib
-import os
 import subprocess
 import time
+import uuid
 from pathlib import Path
-from typing import Generator
+from typing import Any, Generator
 
 import pytest
 import requests
@@ -17,7 +16,8 @@ from .utils import replace_string_in_file
 
 @pytest.fixture(scope="session")
 def imprint_test_version(
-        project_root_path: str, addon_version: str) -> Generator[str, None, str]:
+        project_root_path: str,
+        addon_version: dict[str, str]) -> Generator[str, None, None]:
     """Imprint a test version of the package.
 
     This fixture will replace the version in the package.py file
@@ -34,7 +34,10 @@ def imprint_test_version(
     """
     root = project_root_path
     current_version = addon_version.version
-    test_version = f"{current_version}-test+{hashlib.md5(os.urandom(32)).hexdigest()[:8]}"
+    test_version = (
+        f"{current_version}-test"
+        f"+{uuid.uuid4().hex[:8]}"
+    )
     replace_string_in_file(
         (Path(root) / "package.py").as_posix(),
         f'version = "{current_version}"',
@@ -51,10 +54,10 @@ def imprint_test_version(
 
 @pytest.fixture(scope="session")
 def build_addon_package(
-        printer_session,
-        imprint_test_version,
-        tmp_path,
-        project_root_path):
+        printer_session: Any,  # noqa: ANN401 (printer function)
+        imprint_test_version: str,
+        tmp_path: Path,
+        project_root_path: Path) -> tuple[str, Path]:
     """Build the addon package.
 
     This fixture will build the addon package with the test version
@@ -71,14 +74,17 @@ def build_addon_package(
 
     """
     printer_session("Building addon package ...")
+    # uses any python in path
+
+    args = [
+        "python",
+        (project_root_path / "create_package.py").as_posix(),
+        "-o", tmp_path.as_posix(),
+    ]
     process = subprocess.Popen(
-        [
-            "python",
-            (project_root_path / "create_package.py").as_posix(),
-            "-o", tmp_path.as_posix()
-        ],
+        args,
         stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE
+        stderr=subprocess.PIPE,
     )
 
     stdout, stderr = process.communicate()
@@ -93,7 +99,7 @@ def build_addon_package(
 
 def _wait_for_the_event(
         server_url: str, api_key: str, event_id: str,
-        tries: int = 10, sleep: int = 6):
+        tries: int = 10, sleep: int = 6) -> dict:
     """Wait for the event to finish.
 
     Args:
@@ -117,7 +123,7 @@ def _wait_for_the_event(
 
     while try_count < max_tries:
         response = session.get(f"{server_url}/api/events/{event_id}")
-        assert response.status_code == 200, f"Failed to get event: {response.text}"  # noqa: E501
+        assert response.status_code == response.ok, f"Failed to get event: {response.text}"  # noqa: E501
         if response.json()["status"] == "finished":
             break
         time.sleep(sleep)
@@ -142,7 +148,7 @@ def _wait_for_server_restart(server_url: str, api_key: str) -> None:
     session.headers.update({"x-api-key": api_key})
 
     response = session.post(f"{server_url}/api/system/restart")
-    assert response.status_code == 204, (
+    assert response.status_code == 204, (  # noqa: PLR2004
         f"Failed to restart server: {response.text}")
 
     time.sleep(1)
@@ -162,11 +168,11 @@ def _wait_for_server_restart(server_url: str, api_key: str) -> None:
 
 @pytest.fixture
 def installed_addon(
-        ayon_connection_env,
-        ayon_server_session,
-        build_addon_package,
-        printer_session
-):
+        ayon_connection_env: tuple[str, str],
+        ayon_server_session: requests.Session,
+        build_addon_package: tuple[str, Path],
+        printer_session: Any  # noqa: ANN401 (printer function)
+) -> Generator[str, None, None]:
     """Install and uninstall the addon.
 
     This fixture will install the addon, restart the server,
@@ -188,18 +194,18 @@ def installed_addon(
     version, _ = build_addon_package
 
     printer_session("Installing addon ...")
-    response = session.post(
-        f"{server_url}/api/addons/install",
-        json={
-            "addonName": "ayon_usd",
-            "addonVersion": version
-        },
-        files={
-            "upload_file": open(
-                build_addon_package[1] / f"ayon_usd-{version}.zip", "rb")
-        }
-    )
-    assert response.status_code == 200,\
+    with open(build_addon_package[1] / f"ayon_usd-{version}.zip", "rb") as f:
+        response = session.post(
+            f"{server_url}/api/addons/install",
+            json={
+                "addonName": "ayon_usd",
+                "addonVersion": version
+            },
+            files={
+                "upload_file": f
+            }
+        )
+    assert response.status_code == response.ok,\
         f"Failed to install addon: {response.text}"
 
     event_id = response.json()["eventId"]
@@ -214,7 +220,7 @@ def installed_addon(
 
     printer_session("Checking installed addons for ayon_usd ...")
     response = session.get(f"{server_url}/api/addons/install")
-    assert response.status_code == 200,\
+    assert response.status_code == response.ok,\
         f"Failed to get installed addons: {response.text}"
 
     addon_names = [item["addonName"] for item in response.json()["items"]]

@@ -16,7 +16,7 @@ import os
 import random
 import secrets
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, List, NamedTuple, Optional
+from typing import TYPE_CHECKING, Generator, List, NamedTuple, Optional
 
 import pytest
 import requests
@@ -161,8 +161,9 @@ def addon_version(project_root_path: Path) -> NamedTuple:
 
 @pytest.fixture
 def project(  # noqa: PLR0914, PLR0915
-        printer: pytest.fixture,
-        ayon_connection_env: tuple[str, str]) -> pytest.fixture:
+        printer,  # noqa: ANN001 (fixture)
+        ayon_connection_env: tuple[str, str]
+) -> Generator[ProjectInfo, None, None]:
     """Set up a project with some data and yield the project info.
 
     This will create a project with a folder, a task, a product, a version,
@@ -380,7 +381,9 @@ def project(  # noqa: PLR0914, PLR0915
             product_name, version, version_entity["id"],
             project_data["anatomy"]["templates"]["publish"],
             project_data["anatomy"]["roots"][0]["windows"],
-            1001, random.randint(1020, 1200), representation_name
+            1001,
+            random.randint(1020, 1200),  # noqa: S311
+            representation_name
         )
 
         response = session.post(
