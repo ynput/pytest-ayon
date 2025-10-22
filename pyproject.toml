@@ -31,7 +31,7 @@ ayon = "pytest_ayon.plugin"
 
 [project.optional-dependencies]
 dev = [
-    "ruff ~= 0.11.4",
+    "ruff ~= 0.14.1",
     "pre-commit",
     "codespell",
     "pydantic~=1.9",
