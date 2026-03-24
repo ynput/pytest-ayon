@@ -123,15 +123,13 @@ def _default_project_anatomy() -> dict[str, Any]:
             "hero": [
                 {
                     "name": "default",
-                    "directory": (
-                        "{root[work]}/{project[name]}/{hierarchy}/"
-                        "{folder[name]}/publish/{product[type]}/"
-                        "{product[name]}/hero"
-                    ),
-                    "file": (
-                        "{project[code]}_{folder[name]}_"
-                        "{task[name]}_hero<_{comment}>.{ext}"
-                    )
+                     "directory": "{root[work]}/{project[name]}/"
+                                     "{hierarchy}/{folder[name]}/publish/"
+                                     "{product[type]}"
+                                     "/{product[name]}/hero",
+                    "file": "{project[code]}_{folder[name]}_"
+                                "{product[name]}_hero<_{output}>"
+                                "<.{@frame}><_{udim}>.{ext}"
                 }
             ],
         },
