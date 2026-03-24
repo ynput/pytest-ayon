@@ -19,11 +19,12 @@ classifiers = [
     "Topic :: Software Development :: Testing",
     "Framework :: Pytest",
 ]
-requires-python = ">=3.9"
+requires-python = "==3.11.6"
 dependencies = [
     "pytest",
     "ayon-python-api",
-    "requests ~= 2.17"
+    "requests ~= 2.17",
+    "ruff>=0.15.7",
 ]
 
 [project.entry-points.pytest11]
@@ -31,10 +32,9 @@ ayon = "pytest_ayon.plugin"
 
 [project.optional-dependencies]
 dev = [
-    "ruff ~= 0.14.1",
+    "ruff ~= 0.15.7",
     "pre-commit",
     "codespell",
-    "pydantic~=1.9",
     "pytest-cov",
     "pytest-print",
     "mypy",
@@ -109,6 +109,7 @@ ignore = [
     "CPY001",  # missing copyright header
     "UP045",
     "S101",    # use of assert
+    "AST100",  # asserts only in tests
 ]
 # Allow fix for all enabled rules (when `--fix`) is provided.
 fixable = ["ALL"]
