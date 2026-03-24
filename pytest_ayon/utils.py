@@ -52,7 +52,7 @@ def create_file_list(  # noqa: PLR0913, PLR0917
                 f"{{root[work]}}/{project_name}/{asset_name}/publish"
                 f"/render/v{version:03d}/{file_name}"),
             "size": random.randint(100000, 1000000),  # noqa: S311
-            "hash": hashlib.md5(file_name).hexdigest(),  # noqa: S324
+            "hash": hashlib.md5(file_name.encode()).hexdigest(),  # noqa: S324
             "hashType": "md5"
         })
     return files
