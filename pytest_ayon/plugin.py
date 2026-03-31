@@ -240,15 +240,13 @@ def project(  # noqa: PLR0914, PLR0915
                 "hero": [
                     {
                         "name": "default",
-                        "directory": (
-                            "{root[work]}/{project[name]}/{hierarchy}/"
-                            "{folder[name]}/publish/{product[type]}/"
-                            "{product[name]}/hero"
-                        ),
-                        "file": (
-                            "{project[code]}_{folder[name]}_"
-                            "{task[name]}_hero<_{comment}>.{ext}"
-                        )
+                        "directory": "{root[work]}/{project[name]}/"
+                                     "{hierarchy}/{folder[name]}/publish/"
+                                     "{product[type]}"
+                                     "/{product[name]}/hero",
+                        "file": "{project[code]}_{folder[name]}_"
+                                "{product[name]}_hero<_{output}>"
+                                "<.{@frame}><_{udim}>.{ext}"
                     }
                 ],
             },
@@ -544,9 +542,11 @@ def empty_project(  # noqa: PLR0913, PLR0917
                         "name": "default",
                         "directory": "{root[work]}/{project[name]}/"
                                      "{hierarchy}/{folder[name]}/publish/"
-                                     "{product[type]}/{product[name]}/hero",
+                                     "{product[type]}"
+                                     "/{product[name]}/hero",
                         "file": "{project[code]}_{folder[name]}_"
-                                "{task[name]}_hero<_{comment}>.{ext}"
+                                "{product[name]}_hero<_{output}>"
+                                "<.{@frame}><_{udim}>.{ext}"
                     }
                 ],
             },

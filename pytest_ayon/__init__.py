@@ -25,5 +25,5 @@ __all__ = [
 
 __version__ = "0.1.1"
 __author__ = "YNPUT, s.r.o. <team@ynput.io>"
-__title__ = "pytest-ayon"
-__homepage__ = "https://github.com/ynput/pytest-ayon"
+__title__ = "pytest-ayon"  # noqa: RUF067
+__homepage__ = "https://github.com/ynput/pytest-ayon"  # noqa: RUF067
