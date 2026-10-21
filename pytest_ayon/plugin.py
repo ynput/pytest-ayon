@@ -15,7 +15,7 @@ import contextlib
 import os
 import random
 import secrets
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Generator, NamedTuple, Optional
 
 import pytest
@@ -63,16 +63,16 @@ class ProjectInfo:
     project_name: str
     project_code: str
     project_root_folders: dict[str, str]
-    folder: Optional[IdNamePair]
-    folder_entity: Optional[dict]
-    task: Optional[IdNamePair]
-    task_entity: Optional[dict]
-    product: Optional[IdNamePair]
-    product_entity: Optional[dict]
-    version: Optional[IdNamePair]
-    version_entity: Optional[dict]
-    representations: Optional[list[IdNamePair]]
-    links: Optional[list[str]]
+    folder: Optional[IdNamePair] = None
+    folder_entity: Optional[dict] = None
+    task: Optional[IdNamePair] = None
+    task_entity: Optional[dict] = None
+    product: Optional[IdNamePair] = None
+    product_entity: Optional[dict] = None
+    version: Optional[IdNamePair] = None
+    version_entity: Optional[dict] = None
+    representations: Optional[list[IdNamePair]] = field(default_factory=list)
+    links: Optional[list[str]] = field(default_factory=list)
 
 
 @pytest.fixture(scope="session")
@@ -116,7 +116,7 @@ def ayon_connection_env() -> tuple[str, str]:
         tuple[str, str]: The server URL and the API key.
 
     """
-    os.environ["AYON_SERVER_URL"] = os.getenv("AYON_SERVER_URL")
+    os.environ["AYON_SERVER_URL"] = os.getenv("AYON_SERVER_URL").rstrip("/")
     os.environ["AYON_API_KEY"] = os.getenv("AYON_API_KEY")
     return os.environ["AYON_SERVER_URL"], os.environ["AYON_API_KEY"]
 
@@ -308,7 +308,7 @@ def project(  # noqa: PLR0914, PLR0915
     }
     response = session.post(
         f"{server_url}/api/projects", json=project_data)
-    assert response.status_code == STATUS_CREATED
+    assert response.status_code == STATUS_CREATED, response.text
 
     # due to the bug in AYON server, create `relationship` link type
     # TODO(antirotor): remove this once the bug is fixed
@@ -483,18 +483,18 @@ def empty_project(  # noqa: PLR0913, PLR0917
     token = secrets.token_hex(5)
 
     values = {
-        "project_name": f"{token}_test_project",
+        "project_name": project_name or f"{token}_test_project",
         "project_code": project_code or f"TP_{token[:3]}",
         "folder_types": folder_types,
         "task_types": task_types,
         "statuses": statuses,
     }
 
-    # set default values
+    # override default values with the given parameters
     if hasattr(request, "param"):
-        values = dict(request.param.items())
+        values.update(request.param)
 
-    printer(f"creating project {project_name}...")
+    printer(f'creating project {values["project_name"]}...')
     session = requests.Session()
     session.headers.update({"x-api-key": api_key})
 
@@ -608,7 +608,7 @@ def empty_project(  # noqa: PLR0913, PLR0917
     }
     response = session.post(
         f"{server_url}/api/projects", json=project_data)
-    assert response.status_code == STATUS_CREATED
+    assert response.status_code == STATUS_CREATED, response.text
 
     # due to the bug in AYON server, create `relationship` link type
     # TODO (antirotor): remove this once the bug is fixed
