@@ -449,8 +449,132 @@ def project_params(request: pytest.FixtureRequest) -> dict[str, Any]:
     return {**defaults, **getattr(request, "param", {})}
 
 
+_RELATIONSHIP_LINK_TYPE = "relationship|representation|representation"
+
+
+def _create_project(
+        session: requests.Session,
+        server_url: str,
+        project_data: dict[str, Any]) -> None:
+    """Create a project and its `relationship` link type."""
+    response = session.post(f"{server_url}/api/projects", json=project_data)
+    assert response.status_code == STATUS_CREATED, response.text
+
+    # due to the bug in AYON server, create `relationship` link type
+    # TODO(antirotor): remove this once the bug is fixed
+    response = session.put(
+        (f"{server_url}/api/projects/{project_data['name']}"
+         f"/links/types/{_RELATIONSHIP_LINK_TYPE}"),
+        json={"data": {"color": "#73149F"}},
+    )
+    assert response.status_code == STATUS_NO_CONTENT
+
+
+def _create_entity(
+        session: requests.Session,
+        server_url: str,
+        project_name: str,
+        endpoint: str,
+        payload: dict[str, Any]) -> dict[str, Any]:
+    """Create an entity through `/projects/{name}/{endpoint}`.
+
+    Returns:
+        dict[str, Any]: Server response (contains at least the `id`).
+
+    """
+    response = session.post(
+        f"{server_url}/api/projects/{project_name}/{endpoint}", json=payload)
+    assert response.status_code == STATUS_CREATED, response.text
+    return response.json()
+
+
+def _create_folder(
+        session: requests.Session,
+        server_url: str,
+        project_name: str,
+        folder_name: str,
+        folder_type: str) -> dict[str, Any]:
+    """Create a folder and return its full entity."""
+    created = _create_entity(
+        session, server_url, project_name, "folders",
+        {"name": folder_name, "folderType": folder_type})
+    response = session.get(
+        f"{server_url}/api/projects/{project_name}/folders/{created['id']}")
+    assert response.status_code == STATUS_OK
+    return response.json()
+
+
+def _create_representations(  # noqa: PLR0913
+        session: requests.Session,
+        server_url: str,
+        printer: Callable[[Any], None],
+        *,
+        project_name: str,
+        project_code: str,
+        folder_name: str,
+        task_name: str,
+        product_name: str,
+        version: int,
+        version_id: str,
+        anatomy: dict[str, Any],
+        params: dict[str, Any]) -> list[IdNamePair]:
+    """Create representations for a version."""
+    publish_templates = anatomy.get("templates", {}).get("publish", [])
+    assert publish_templates, "Project anatomy must define templates.publish"
+    work_root = _work_root_path(_first_work_root(anatomy))
+
+    representations = []
+    for i in range(1, params["representation_count"] + 1):
+        representation_name = f"{params['representation_name_prefix']}_{i}"
+        rep_data = create_representation(
+            project_name, project_code, folder_name, task_name,
+            product_name, version, version_id,
+            publish_templates,
+            work_root,
+            params["frame_start"],
+            random.randint(params["frame_end_min"], params["frame_end_max"]),  # noqa: S311
+            representation_name,
+        )
+        created = _create_entity(
+            session, server_url, project_name, "representations", rep_data)
+        printer(
+            f"Created representation {representation_name} with "
+            f"{len(rep_data['files'])} files"
+        )
+        representations.append(
+            IdNamePair(name=representation_name, id=created["id"]))
+    return representations
+
+
+def _create_links(
+        session: requests.Session,
+        server_url: str,
+        project_name: str,
+        representations: list[IdNamePair],
+        link_pairs: list[tuple[int, int, str]]) -> list[str]:
+    """Link representations by index pairs; out-of-range pairs are skipped."""
+    links = []
+    for input_idx, output_idx, link_name in link_pairs:
+        if max(input_idx, output_idx) >= len(representations):
+            continue
+        response = session.post(
+            f"{server_url}/api/projects/{project_name}/links",
+            json={
+                "input": representations[input_idx].id,
+                "output": representations[output_idx].id,
+                "name": link_name,
+                "link": _RELATIONSHIP_LINK_TYPE,
+                "linkType": _RELATIONSHIP_LINK_TYPE,
+                "data": {},
+            },
+        )
+        assert response.status_code == STATUS_OK, response.json()
+        links.append(response.json()["id"])
+    return links
+
+
 @pytest.fixture
-def project(  # noqa: PLR0914, PLR0915
+def project(
         printer: Callable[[Any], None],
         ayon_connection_env: tuple[str, str],
         project_anatomy: dict[str, Any],
@@ -459,14 +583,13 @@ def project(  # noqa: PLR0914, PLR0915
 
     This will create a project with a folder, a task, a product, a version,
     and some representations. It will also create some links between the
-    representations.
-
-    TODO(antirotor): split this fixture into smaller fixtures.
-        Make it more modular.
+    representations. The individual steps live in the `_create_*` helpers.
 
     Args:
         printer: The printer fixture.
         ayon_connection_env: The AYON connection environment fixture.
+        project_anatomy: The resolved project anatomy.
+        project_params: Parameters controlling the created entities.
 
     Yields:
         ProjectInfo: The project information.
@@ -494,123 +617,52 @@ def project(  # noqa: PLR0914, PLR0915
     session = requests.Session()
     session.headers.update({"x-api-key": api_key})
 
-    project_data = {
+    _create_project(session, server_url, {
         "name": project_name,
         "code": project_code,
         "anatomy": project_anatomy,
         "library": project_params["library"],
-    }
-    response = session.post(
-        f"{server_url}/api/projects", json=project_data)
-    assert response.status_code == STATUS_CREATED, response.text
+    })
 
-    # due to the bug in AYON server, create `relationship` link type
-    # TODO(antirotor): remove this once the bug is fixed
-    response = session.put(
-        (f"{server_url}/api/projects/{project_name}/links/types/"
-         "relationship|representation|representation"),
-        json={
-            "data": {
-                "color": "#73149F",
-            }
-        }
-    )
-    assert response.status_code == STATUS_NO_CONTENT
-
-    # fill project with some data
-    # Create a folder
     printer(f"filling project {project_name} with data...")
-    response = session.post(
-        f"{server_url}/api/projects/{project_name}/folders", json={
-            "name": folder_name,
-            "folderType": folder_type,
-        })
-    assert response.status_code == STATUS_CREATED
-    folder_id = response.json()["id"]
-    response = session.get(
-        f"{server_url}/api/projects/{project_name}/folders/{folder_id}")
-    assert response.status_code == STATUS_OK
-    folder_entity = response.json()
+    folder_entity = _create_folder(
+        session, server_url, project_name, folder_name, folder_type)
     printer(folder_entity)
-
-    # Create a task
-    response = session.post(
-        f"{server_url}/api/projects/{project_name}/tasks", json={
+    task_entity = _create_entity(
+        session, server_url, project_name, "tasks", {
             "name": task_name,
             "taskType": task_type,
             "folderId": folder_entity["id"],
         })
-    assert response.status_code == STATUS_CREATED
-    task_entity = response.json()
-
-    # Create a product
-    response = session.post(
-        f"{server_url}/api/projects/{project_name}/products",
-        json={
+    product_entity = _create_entity(
+        session, server_url, project_name, "products", {
             "name": product_name,
             "folderId": folder_entity["id"],
             "productType": product_type,
         })
-    assert response.status_code == STATUS_CREATED
-    product_entity = response.json()
-
-    # Create a version
-    response = session.post(
-        f"{server_url}/api/projects/{project_name}/versions", json={
+    version_entity = _create_entity(
+        session, server_url, project_name, "versions", {
             "version": version,
             "productId": product_entity["id"],
             "taskId": task_entity["id"],
         })
-    assert response.status_code == STATUS_CREATED
-    version_entity = response.json()
 
-    # Create a representations
-    representations = []
-    publish_templates = project_data["anatomy"].get("templates", {}).get("publish", [])
-    assert publish_templates, "Project anatomy must define templates.publish"
-    root_entry = _first_work_root(project_data["anatomy"])
-    work_root = _work_root_path(root_entry)
-
-    for i in range(1, project_params["representation_count"] + 1):
-        representation_name = f"{project_params['representation_name_prefix']}_{i}"
-        rep_data = create_representation(
-            project_name, project_code, folder_name, task_name,
-            product_name, version, version_entity["id"],
-            publish_templates,
-            work_root,
-            project_params["frame_start"],
-            random.randint(project_params["frame_end_min"], project_params["frame_end_max"]),
-            representation_name,
-        )
-
-        response = session.post(
-            f"{server_url}/api/projects/{project_name}/representations",
-            json=rep_data)
-        assert response.status_code == STATUS_CREATED
-        printer(
-            f"Created representation {representation_name} with "
-            f"{len(rep_data['files'])} files"
-        )
-        representations.append(IdNamePair(
-            name=representation_name, id=response.json()["id"]))
-
-    links = []
-    for input_idx, output_idx, link_name in project_params["link_pairs"]:
-        if input_idx >= len(representations) or output_idx >= len(representations):
-            continue
-        response = session.post(
-            f"{server_url}/api/projects/{project_name}/links",
-            json={
-                "input": representations[input_idx].id,
-                "output": representations[output_idx].id,
-                "name": link_name,
-                "link": "relationship|representation|representation",
-                "linkType": "relationship|representation|representation",
-                "data": {}
-            }
-        )
-        assert response.status_code == STATUS_OK, response.json()
-        links.append(response.json()["id"])
+    root_entry = _first_work_root(project_anatomy)
+    representations = _create_representations(
+        session, server_url, printer,
+        project_name=project_name,
+        project_code=project_code,
+        folder_name=folder_name,
+        task_name=task_name,
+        product_name=product_name,
+        version=version,
+        version_id=version_entity["id"],
+        anatomy=project_anatomy,
+        params=project_params,
+    )
+    links = _create_links(
+        session, server_url, project_name,
+        representations, project_params["link_pairs"])
 
     yield ProjectInfo(
         project_name=project_name,
