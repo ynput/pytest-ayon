@@ -19,7 +19,14 @@ import random
 import secrets
 import sys
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Callable, Generator, List, NamedTuple, Optional
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Callable,
+    Generator,
+    NamedTuple,
+    Optional,
+)
 
 import pytest
 import requests
@@ -79,7 +86,12 @@ class ProjectInfo:
 
 
 def _default_project_anatomy() -> dict[str, Any]:
-    """Default anatomy used when server presets are unavailable."""
+    """Default anatomy used when server presets are unavailable.
+
+    Returns:
+        dict: The default project anatomy.
+
+    """
     return {
         "roots": [
             {
@@ -113,7 +125,7 @@ def _default_project_anatomy() -> dict[str, Any]:
                     "directory": (
                         "{root[work]}/{project[name]}/{hierarchy}/"
                         "{folder[name]}/publish/{product[type]}/"
-                        "{product[name]}/v{version:0>3}"  # noqa: RUF027
+                        "{product[name]}/v{version:0>3}"
                     ),
                     "file": (
                         "{project[code]}_{folder[name]}_{product[name]}"
@@ -191,8 +203,18 @@ def _default_project_anatomy() -> dict[str, Any]:
     }
 
 
-def _merge_dicts(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
-    """Recursively merge dictionaries."""
+def _merge_dicts(
+        base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
+    """Recursively merge dictionaries.
+
+    Args:
+        base (dict[str, Any]): The base dictionary.
+        override (dict[str, Any]): The dictionary with overriding values.
+
+    Returns:
+        dict[str, Any]: The merged dictionary.
+
+    """
     merged = copy.deepcopy(base)
     for key, value in override.items():
         if isinstance(value, dict) and isinstance(merged.get(key), dict):
@@ -202,11 +224,17 @@ def _merge_dicts(base: dict[str, Any], override: dict[str, Any]) -> dict[str, An
     return merged
 
 
-def _extract_anatomy_from_preset(data: dict[str, Any]) -> Optional[dict[str, Any]]:
+def _extract_anatomy_from_preset(
+        data: dict[str, Any]) -> Optional[dict[str, Any]]:
     """Extract anatomy payload from a preset response.
 
     `GET /api/anatomy/presets/{name}` returns the anatomy object itself
     (`roots`, `templates`, `attributes`, `folder_types`, `task_types`, ...).
+
+    Returns:
+        Optional[dict[str, Any]]: The extracted anatomy data
+            if available, else None.
+
     """
     if not isinstance(data, dict):
         return None
@@ -224,7 +252,18 @@ def _fetch_anatomy_preset(
         session: requests.Session,
         server_url: str,
         preset_name: str) -> Optional[dict[str, Any]]:
-    """Fetch anatomy preset from server and return anatomy data."""
+    """Fetch anatomy preset from server and return anatomy data.
+
+    Args:
+        session (requests.Session): The HTTP session to use for the request.
+        server_url (str): The base URL of the server.
+        preset_name (str): The name of the anatomy preset to fetch.
+
+    Returns:
+        Optional[dict[str, Any]]: The anatomy data if the
+            request is successful and the data is valid, else None.
+
+    """
     response = session.get(f"{server_url}/api/anatomy/presets/{preset_name}")
     if response.status_code != STATUS_OK:
         return None
@@ -235,7 +274,7 @@ def _fetch_anatomy_preset(
 
 
 def _pick_named_item_name(
-        items: Any, preferred: Optional[str] = None) -> Optional[str]:
+        items: Any, preferred: Optional[str] = None) -> Optional[str]:  # ruff: ignore[any-type]
     """Return the `name` of the preferred item, else of the first item.
 
     The match against `preferred` is case-insensitive.
@@ -268,7 +307,17 @@ def _first_work_root(anatomy: dict[str, Any]) -> dict[str, str]:
 
 
 def _work_root_path(root: dict[str, str]) -> str:
-    """Resolve root path for the current platform, with fallbacks."""
+    """Resolve root path for the current platform, with fallbacks.
+
+    Args:
+        root (dict[str, str]): The root dictionary containing
+            platform-specific paths.
+
+    Returns:
+        str: The resolved root path for the current platform, or a fallback
+            path if not found.
+
+    """
     current = {
         "win32": "windows", "darwin": "darwin"}.get(sys.platform, "linux")
     for platform_key in (current, "windows", "linux", "darwin"):
@@ -377,6 +426,13 @@ def project_anatomy_preset_name(request: pytest.FixtureRequest) -> str:
 
     Can be overridden via indirect parametrization of this fixture,
     otherwise taken from `--ayon-anatomy-preset`.
+
+    Args:
+        request (pytest.FixtureRequest): The pytest fixture request object.
+
+    Returns:
+        str: The preferred server anatomy preset name.
+
     """
     if hasattr(request, "param"):
         return request.param
@@ -385,13 +441,23 @@ def project_anatomy_preset_name(request: pytest.FixtureRequest) -> str:
 
 @pytest.fixture
 def project_anatomy_fallback_presets() -> tuple[str, ...]:
-    """Fallback presets tried if preferred anatomy preset is not available."""
+    """Fallback presets tried if preferred anatomy preset is not available.
+
+    Returns:
+        tuple[str, ...]: The fallback anatomy preset names.
+
+    """
     return ("__builtin__",)
 
 
 @pytest.fixture
 def project_anatomy_overrides() -> dict[str, Any]:
-    """Optional anatomy override data merged on top of resolved anatomy."""
+    """Optional anatomy override data merged on top of resolved anatomy.
+
+    Returns:
+        dict[str, Any]: The anatomy override data.
+
+    """
     return {}
 
 
@@ -402,9 +468,25 @@ def project_anatomy(
         project_anatomy_preset_name: str,
         project_anatomy_fallback_presets: tuple[str, ...],
         project_anatomy_overrides: dict[str, Any]) -> dict[str, Any]:
-    """Resolve anatomy from presets, with fallback to built-in defaults."""
+    """Resolve anatomy from presets, with fallback to built-in defaults.
+
+    Args:
+        ayon_connection_env (tuple[str, str]): The Ayon server
+            connection environment.
+        ayon_server_session (requests.Session): The HTTP session for
+            server communication.
+        project_anatomy_preset_name (str): The preferred anatomy preset name.
+        project_anatomy_fallback_presets (tuple[str, ...]): Fallback anatomy
+            preset names.
+        project_anatomy_overrides (dict[str, Any]): Anatomy override data.
+
+    Returns:
+        dict[str, Any]: The resolved anatomy data.
+
+    """
     server_url, _ = ayon_connection_env
-    preset_names: list[str] = [project_anatomy_preset_name, *project_anatomy_fallback_presets]
+    preset_names: list[str] = [
+        project_anatomy_preset_name, *project_anatomy_fallback_presets]
     seen: set[str] = set()
     anatomy: Optional[dict[str, Any]] = None
 
@@ -412,7 +494,8 @@ def project_anatomy(
         if preset_name in seen:
             continue
         seen.add(preset_name)
-        anatomy = _fetch_anatomy_preset(ayon_server_session, server_url, preset_name)
+        anatomy = _fetch_anatomy_preset(
+            ayon_server_session, server_url, preset_name)
         if anatomy is not None:
             break
 
@@ -430,7 +513,12 @@ def project_anatomy(
 
 @pytest.fixture
 def project_params(request: pytest.FixtureRequest) -> dict[str, Any]:
-    """Project fixture defaults, overridable via indirect parametrization."""
+    """Project fixture defaults, overridable via indirect parametrization.
+
+    Returns:
+        dict[str, Any]: The combined project parameters.
+
+    """
     defaults = {
         "product_name": "renderMain",
         "product_type": "render",
@@ -494,7 +582,12 @@ def _create_folder(
         project_name: str,
         folder_name: str,
         folder_type: str) -> dict[str, Any]:
-    """Create a folder and return its full entity."""
+    """Create a folder and return its full entity.
+
+    Returns:
+        dict[str, Any]: The created folder entity.
+
+    """
     created = _create_entity(
         session, server_url, project_name, "folders",
         {"name": folder_name, "folderType": folder_type})
@@ -504,7 +597,7 @@ def _create_folder(
     return response.json()
 
 
-def _create_representations(  # noqa: PLR0913
+def _create_representations(  # ruff: ignore[too-many-arguments]
         session: requests.Session,
         server_url: str,
         printer: Callable[[Any], None],
@@ -518,7 +611,12 @@ def _create_representations(  # noqa: PLR0913
         version_id: str,
         anatomy: dict[str, Any],
         params: dict[str, Any]) -> list[IdNamePair]:
-    """Create representations for a version."""
+    """Create representations for a version.
+
+    Returns:
+        list[IdNamePair]: The created representations.
+
+    """
     publish_templates = anatomy.get("templates", {}).get("publish", [])
     assert publish_templates, "Project anatomy must define templates.publish"
     work_root = _work_root_path(_first_work_root(anatomy))
@@ -532,7 +630,7 @@ def _create_representations(  # noqa: PLR0913
             publish_templates,
             work_root,
             params["frame_start"],
-            random.randint(params["frame_end_min"], params["frame_end_max"]),  # noqa: S311
+            random.randint(params["frame_end_min"], params["frame_end_max"]),  # ruff: ignore[suspicious-non-cryptographic-random-usage]
             representation_name,
         )
         created = _create_entity(
@@ -552,7 +650,20 @@ def _create_links(
         project_name: str,
         representations: list[IdNamePair],
         link_pairs: list[tuple[int, int, str]]) -> list[str]:
-    """Link representations by index pairs; out-of-range pairs are skipped."""
+    """Link representations by index pairs; out-of-range pairs are skipped.
+
+    Args:
+        session: The HTTP session for server communication.
+        server_url: The base URL of the AYON server.
+        project_name: The name of the project.
+        representations: The list of representations to link.
+        link_pairs: A list of tuples containing input index, output
+            index, and link name.
+
+    Returns:
+        list[str]: The IDs of the created links.
+
+    """
     links = []
     for input_idx, output_idx, link_name in link_pairs:
         if max(input_idx, output_idx) >= len(representations):
@@ -574,7 +685,7 @@ def _create_links(
 
 
 @pytest.fixture
-def project(
+def project(  # ruff: ignore[too-many-locals]
         printer: Callable[[Any], None],
         ayon_connection_env: tuple[str, str],
         project_anatomy: dict[str, Any],
@@ -688,9 +799,9 @@ def project(
 
 
 @pytest.fixture
-def empty_project(  # noqa: PLR0913, PLR0917
+def empty_project(  # ruff: ignore[too-many-arguments, too-many-positional-arguments]
     request: pytest.FixtureRequest,
-    printer: Any,  # noqa: ANN401 (fixture)
+    printer: Any,  # ruff: ignore[any-type] (fixture)
     ayon_connection_env: tuple[str, str],
     project_anatomy: dict[str, Any],
     project_name: Optional[str] = None,
@@ -739,7 +850,6 @@ def empty_project(  # noqa: PLR0913, PLR0917
     printer(f'creating project {values["project_name"]}...')
     session = requests.Session()
     session.headers.update({"x-api-key": api_key})
-
 
     project_anatomy = copy.deepcopy(project_anatomy)
     project_anatomy["folder_types"] = [

@@ -35,7 +35,7 @@ def pytest_configure(config: pytest.Config) -> None:
 
 
 def pytest_collection_modifyitems(
-        config: pytest.Config, items: list[pytest.Item]) -> None:
+        config: pytest.Config, items: list[pytest.Item]) -> None:  # ruff: ignore[unused-function-argument]
     """Skip live tests when server credentials are missing."""
     if os.getenv("AYON_SERVER_URL") and os.getenv("AYON_API_KEY"):
         return
