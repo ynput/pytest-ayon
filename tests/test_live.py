@@ -48,3 +48,12 @@ def test_project_created(project: Any,  # noqa: ANN401
     response = ayon_server_session.get(
         f"{url}/api/projects/{project.project_name}")
     assert response.status_code == requests.codes.ok
+
+
+def test_project_contents(project: Any) -> None:  # noqa: ANN401
+    assert project.folder.id
+    assert project.task.id
+    assert project.product.id
+    assert project.version.name == "v001"
+    assert len(project.representations) == 4
+    assert len(project.links) == 2
