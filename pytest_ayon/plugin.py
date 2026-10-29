@@ -17,6 +17,7 @@ import logging
 import os
 import random
 import secrets
+import sys
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Callable, Generator, List, NamedTuple, Optional
 
@@ -202,15 +203,19 @@ def _merge_dicts(base: dict[str, Any], override: dict[str, Any]) -> dict[str, An
 
 
 def _extract_anatomy_from_preset(data: dict[str, Any]) -> Optional[dict[str, Any]]:
-    """Extract anatomy payload from possible preset response formats."""
-    candidates: list[Any] = [
-        data.get("anatomy"),
-        data.get("data", {}).get("anatomy") if isinstance(data.get("data"), dict) else None,
-        data.get("data"),
-        data,
-    ]
-    for candidate in candidates:
-        if isinstance(candidate, dict) and "roots" in candidate and "templates" in candidate:
+    """Extract anatomy payload from a preset response.
+
+    `GET /api/anatomy/presets/{name}` returns the anatomy object itself
+    (`roots`, `templates`, `attributes`, `folder_types`, `task_types`, ...).
+    """
+    if not isinstance(data, dict):
+        return None
+    for candidate in (data, data.get("anatomy")):
+        if (
+            isinstance(candidate, dict)
+            and isinstance(candidate.get("roots"), list)
+            and isinstance(candidate.get("templates"), dict)
+        ):
             return candidate
     return None
 
@@ -229,30 +234,44 @@ def _fetch_anatomy_preset(
     return copy.deepcopy(anatomy)
 
 
-def _first_named_item_name(items: Any) -> Optional[str]:
-    """Return first `name` field from a list of dictionaries."""
-    if not isinstance(items, list) or not items:
+def _pick_named_item_name(
+        items: Any, preferred: Optional[str] = None) -> Optional[str]:
+    """Return the `name` of the preferred item, else of the first item.
+
+    The match against `preferred` is case-insensitive.
+    """
+    if not isinstance(items, list):
         return None
-    item = items[0]
-    if not isinstance(item, dict):
-        return None
-    name = item.get("name")
-    return name if isinstance(name, str) else None
+    names = [
+        item["name"] for item in items
+        if isinstance(item, dict) and isinstance(item.get("name"), str)
+    ]
+    if preferred:
+        for name in names:
+            if name.lower() == preferred.lower():
+                return name
+    return names[0] if names else None
 
 
 def _first_work_root(anatomy: dict[str, Any]) -> dict[str, str]:
-    """Return first available root dictionary."""
-    roots = anatomy.get("roots")
-    if isinstance(roots, list):
-        for root in roots:
-            if isinstance(root, dict):
-                return root
+    """Return the `work` root, else the first root, from the anatomy."""
+    roots = [
+        root for root in anatomy.get("roots") or []
+        if isinstance(root, dict)
+    ]
+    for root in roots:
+        if root.get("name") == "work":
+            return root
+    if roots:
+        return roots[0]
     return {"name": "work", "windows": "C:/projects"}
 
 
 def _work_root_path(root: dict[str, str]) -> str:
-    """Resolve work root path for representation context."""
-    for platform_key in ("windows", "linux", "darwin"):
+    """Resolve root path for the current platform, with fallbacks."""
+    current = {
+        "win32": "windows", "darwin": "darwin"}.get(sys.platform, "linux")
+    for platform_key in (current, "windows", "linux", "darwin"):
         value = root.get(platform_key)
         if isinstance(value, str) and value:
             return value
@@ -462,16 +481,14 @@ def project(  # noqa: PLR0914, PLR0915
     product_type = project_params["product_type"]
     version = project_params["version"]
 
-    task_type = project_params["task_type"]
-    anatomy_task_type = _first_named_item_name(project_anatomy.get("task_types"))
-    if anatomy_task_type:
-        task_type = anatomy_task_type
+    task_type = _pick_named_item_name(
+        project_anatomy.get("task_types"),
+        project_params["task_type"]) or project_params["task_type"]
     task_name = project_params["task_name"] or task_type
 
-    folder_type = project_params["folder_type"]
-    anatomy_folder_type = _first_named_item_name(project_anatomy.get("folder_types"))
-    if anatomy_folder_type:
-        folder_type = anatomy_folder_type
+    folder_type = _pick_named_item_name(
+        project_anatomy.get("folder_types"),
+        project_params["folder_type"]) or project_params["folder_type"]
 
     printer(f"creating project {project_name}...")
     session = requests.Session()
