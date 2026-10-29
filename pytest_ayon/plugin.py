@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import contextlib
 import copy
+import logging
 import os
 import random
 import secrets
@@ -342,13 +343,25 @@ def addon_version(project_root_path: Path) -> NamedTuple:
     return AddonVersion(name=name, version=version)
 
 
+def pytest_addoption(parser: pytest.Parser) -> None:
+    """Register pytest-ayon command line options."""
+    parser.addoption(
+        "--ayon-anatomy-preset",
+        default="__primary__",
+        help="Server anatomy preset used for test projects.",
+    )
+
+
 @pytest.fixture
 def project_anatomy_preset_name(request: pytest.FixtureRequest) -> str:
     """Preferred server anatomy preset name.
 
-    Can be overridden via indirect parametrization of this fixture.
+    Can be overridden via indirect parametrization of this fixture,
+    otherwise taken from `--ayon-anatomy-preset`.
     """
-    return getattr(request, "param", "__primary__")
+    if hasattr(request, "param"):
+        return request.param
+    return request.config.getoption("ayon_anatomy_preset")
 
 
 @pytest.fixture
@@ -385,6 +398,9 @@ def project_anatomy(
             break
 
     if anatomy is None:
+        logging.getLogger(__name__).warning(
+            "No anatomy preset available on server (tried %s); "
+            "using built-in default anatomy.", sorted(seen))
         anatomy = _default_project_anatomy()
 
     if project_anatomy_overrides:
@@ -656,6 +672,7 @@ def empty_project(  # noqa: PLR0913, PLR0917
     session.headers.update({"x-api-key": api_key})
 
 
+    project_anatomy = copy.deepcopy(project_anatomy)
     project_anatomy["folder_types"] = [
         {
             "name": folder_type.capitalize(),
