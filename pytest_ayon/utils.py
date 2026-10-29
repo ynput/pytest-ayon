@@ -11,7 +11,7 @@ STATUS_CREATED = 201
 STATUS_NO_CONTENT = 204
 
 
-def create_file_list(  # noqa: PLR0913, PLR0917
+def create_file_list(  # ruff: ignore[too-many-arguments, too-many-positional-arguments]
         project_name: str,
         project_code: str,
         asset_name: str,
@@ -51,14 +51,14 @@ def create_file_list(  # noqa: PLR0913, PLR0917
             "path": (
                 f"{{root[work]}}/{project_name}/{asset_name}/publish"
                 f"/render/v{version:03d}/{file_name}"),
-            "size": random.randint(100000, 1000000),  # noqa: S311
-            "hash": hashlib.md5(file_name.encode()).hexdigest(),  # noqa: S324
+            "size": random.randint(100000, 1000000),  # ruff: ignore[suspicious-non-cryptographic-random-usage]
+            "hash": hashlib.md5(file_name.encode()).hexdigest(),  # ruff: ignore[hashlib-insecure-hash-function]
             "hashType": "md5"
         })
     return files
 
 
-def create_representation(  # noqa: PLR0913, PLR0917
+def create_representation(  # ruff: ignore[too-many-arguments, too-many-positional-arguments]
         project_name: str,
         project_code: str,
         folder_name: str,

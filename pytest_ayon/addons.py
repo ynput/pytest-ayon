@@ -54,7 +54,7 @@ def imprint_test_version(
 
 @pytest.fixture(scope="session")
 def build_addon_package(
-        printer_session: Any,  # noqa: ANN401 (printer function)
+        printer_session: Any,  # ruff:ignore[any-type] (printer function)
         imprint_test_version: str,
         tmp_path: Path,
         project_root_path: Path) -> tuple[str, Path]:
@@ -123,14 +123,14 @@ def _wait_for_the_event(
 
     while try_count < max_tries:
         response = session.get(f"{server_url}/api/events/{event_id}")
-        assert response.status_code == response.ok, f"Failed to get event: {response.text}"  # noqa: E501
+        assert response.status_code == response.ok, f"Failed to get event: {response.text}"  # ruff:ignore[line-too-long]
         if response.json()["status"] == "finished":
             break
         time.sleep(sleep)
         try_count += 1
 
     assert response is not None, "Failed to get event"
-    assert response.json()["status"] == "finished", f"Event status is not 'finished': {response.text}"  # noqa: E501
+    assert response.json()["status"] == "finished", f"Event status is not 'finished': {response.text}"  # ruff:ignore[line-too-long]
     return response.json()
 
 
@@ -148,7 +148,7 @@ def _wait_for_server_restart(server_url: str, api_key: str) -> None:
     session.headers.update({"x-api-key": api_key})
 
     response = session.post(f"{server_url}/api/system/restart")
-    assert response.status_code == 204, (  # noqa: PLR2004
+    assert response.status_code == 204, (
         f"Failed to restart server: {response.text}")
 
     time.sleep(1)
@@ -171,7 +171,7 @@ def installed_addon(
         ayon_connection_env: tuple[str, str],
         ayon_server_session: requests.Session,
         build_addon_package: tuple[str, Path],
-        printer_session: Any  # noqa: ANN401 (printer function)
+        printer_session: Any  # ruff:ignore[any-type] (printer function)
 ) -> Generator[str, None, None]:
     """Install and uninstall the addon.
 

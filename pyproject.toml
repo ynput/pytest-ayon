@@ -19,12 +19,13 @@ classifiers = [
     "Topic :: Software Development :: Testing",
     "Framework :: Pytest",
 ]
-requires-python = ">=3.9"
+requires-python = "==3.11.6"
 dependencies = [
     "pytest",
     "ayon-python-api",
     "pytest-print",
-    "requests ~= 2.17"
+    "requests ~= 2.17",
+    "ruff>=0.15.7",
 ]
 
 [project.entry-points.pytest11]
@@ -32,10 +33,9 @@ ayon = "pytest_ayon.plugin"
 
 [project.optional-dependencies]
 dev = [
-    "ruff ~= 0.14.1",
+    "ruff ~= 0.15.7",
     "pre-commit",
     "codespell",
-    "pydantic~=1.9",
     "pytest-cov",
     "mypy",
 ]
@@ -91,24 +91,26 @@ pydocstyle.convention = "google"
 select = ["ALL"]
 ignore = [
     "PTH",
-    "ANN204",
-    "COM812",
-    "S603",
-    "ERA001",
-    "TRY003",
-    "UP006",   # support for older python version (type vs. Type)
-    "UP007",   # ..^
-    "UP035",   # ..
-    "UP045",   # Use `X | None` for type annotations
-    "ARG002",
-    "INP001",  # add `__init__.py` to namespaced package
-    "FIX002",  # FIX all TODOs
-    "TD003",   # missing issue link
-    "S404",    # subprocess module is possibly insecure
-    "PLC0415", # import must be on top of the file
-    "CPY001",  # missing copyright header
-    "UP045",
-    "S101",    # use of assert
+    "missing-return-type-special-method",
+    "missing-trailing-comma",
+    "subprocess-without-shell-equals-true",
+    "commented-out-code",
+    "raise-vanilla-args",
+    "non-pep585-annotation",   # support for older python version (type vs. Type)
+    "non-pep604-annotation-union",   # ..^
+    "deprecated-import",   # ..
+    "non-pep604-annotation-optional",   # Use `X | None` for type annotations
+    "unused-method-argument",
+    "implicit-namespace-package",  # add `__init__.py` to namespaced package
+    "line-contains-todo",  # FIX all TODOs
+    "missing-todo-link",   # missing issue link
+    "suspicious-subprocess-import",    # subprocess module is possibly insecure
+    "import-outside-top-level", # import must be on top of the file
+    "missing-copyright-notice",  # missing copyright header
+    "non-pep604-annotation-optional",
+    "assert",    # use of assert
+    "magic-value-comparison",
+    "private-member-access"
 ]
 # Allow fix for all enabled rules (when `--fix`) is provided.
 fixable = ["ALL"]
