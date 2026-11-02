@@ -50,3 +50,38 @@ def test_something(project): ...
 ```
 
 `project_anatomy_overrides` is deep-merged on top of the resolved anatomy.
+
+### Plain functions
+
+The fixtures are thin wrappers around plain functions in `pytest_ayon.server`
+(also exported from `pytest_ayon`). They have no pytest dependency, so you can
+build fixtures of any scope on top of them:
+
+- `create_session(api_key)`: `requests.Session` with the `x-api-key` header
+- `resolve_anatomy(session, url, preset, fallbacks, overrides)`
+- `create_project(session, url, anatomy, *, name=None, code=None, library=False)`
+- `populate_project(session, url, project, anatomy, params=None)`: adds a
+  folder, task, product, version, representations and links
+  (`params` override `DEFAULT_PROJECT_PARAMS`)
+- `delete_project(session, url, project_name)`
+- `register_site(session, url, site_id, platform, *, hostname=None, version="0.0.0")`
+- `unregister_site(session, url, site_id)` (requires an admin key)
+
+They raise `AyonRequestError` when the server returns an unexpected status.
+
+```python
+import pytest
+from pytest_ayon import (
+    create_project, delete_project, populate_project, resolve_anatomy)
+
+
+@pytest.fixture(scope="session")
+def shared_project(ayon_server_session, ayon_connection_env):
+    url, _ = ayon_connection_env
+    anatomy = resolve_anatomy(ayon_server_session, url, "__builtin__")
+    info = create_project(ayon_server_session, url, anatomy)
+    try:
+        yield populate_project(ayon_server_session, url, info, anatomy)
+    finally:
+        delete_project(ayon_server_session, url, info.project_name)
+```
