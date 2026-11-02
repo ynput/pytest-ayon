@@ -440,24 +440,36 @@ def project_anatomy_preset_name(request: pytest.FixtureRequest) -> str:
 
 
 @pytest.fixture
-def project_anatomy_fallback_presets() -> tuple[str, ...]:
+def project_anatomy_fallback_presets(
+        request: pytest.FixtureRequest) -> tuple[str, ...]:
     """Fallback presets tried if preferred anatomy preset is not available.
+
+    Args:
+        request (pytest.FixtureRequest): The pytest fixture request object.
 
     Returns:
         tuple[str, ...]: The fallback anatomy preset names.
 
     """
+    if hasattr(request, "param"):
+        return tuple(request.param)
     return ("__builtin__",)
 
 
 @pytest.fixture
-def project_anatomy_overrides() -> dict[str, Any]:
+def project_anatomy_overrides(
+        request: pytest.FixtureRequest) -> dict[str, Any]:
     """Optional anatomy override data merged on top of resolved anatomy.
+
+    Args:
+        request (pytest.FixtureRequest): The pytest fixture request object.
 
     Returns:
         dict[str, Any]: The anatomy override data.
 
     """
+    if hasattr(request, "param"):
+        return request.param
     return {}
 
 
@@ -606,7 +618,9 @@ def _create_representations(  # ruff: ignore[too-many-arguments]
         project_code: str,
         folder_name: str,
         task_name: str,
+        task_type: str,
         product_name: str,
+        product_type: str,
         version: int,
         version_id: str,
         anatomy: dict[str, Any],
@@ -619,7 +633,13 @@ def _create_representations(  # ruff: ignore[too-many-arguments]
     """
     publish_templates = anatomy.get("templates", {}).get("publish", [])
     assert publish_templates, "Project anatomy must define templates.publish"
-    work_root = _work_root_path(_first_work_root(anatomy))
+    root_entry = _first_work_root(anatomy)
+    work_root = _work_root_path(root_entry)
+    task_short = next(
+        (item.get("shortName") or task_type
+         for item in anatomy.get("task_types") or []
+         if isinstance(item, dict) and item.get("name") == task_type),
+        task_type)
 
     representations = []
     for i in range(1, params["representation_count"] + 1):
@@ -632,6 +652,10 @@ def _create_representations(  # ruff: ignore[too-many-arguments]
             params["frame_start"],
             random.randint(params["frame_end_min"], params["frame_end_max"]),  # ruff: ignore[suspicious-non-cryptographic-random-usage]
             representation_name,
+            root_name=root_entry["name"],
+            product_type=product_type,
+            task_type=task_type,
+            task_short=task_short,
         )
         created = _create_entity(
             session, server_url, project_name, "representations", rep_data)
@@ -666,7 +690,8 @@ def _create_links(
     """
     links = []
     for input_idx, output_idx, link_name in link_pairs:
-        if max(input_idx, output_idx) >= len(representations):
+        if not all(0 <= idx < len(representations)
+                   for idx in (input_idx, output_idx)):
             continue
         response = session.post(
             f"{server_url}/api/projects/{project_name}/links",
@@ -765,7 +790,9 @@ def project(  # ruff: ignore[too-many-locals]
         project_code=project_code,
         folder_name=folder_name,
         task_name=task_name,
+        task_type=task_type,
         product_name=product_name,
+        product_type=product_type,
         version=version,
         version_id=version_entity["id"],
         anatomy=project_anatomy,

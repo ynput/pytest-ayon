@@ -19,13 +19,12 @@ classifiers = [
     "Topic :: Software Development :: Testing",
     "Framework :: Pytest",
 ]
-requires-python = "==3.11.6"
+requires-python = ">=3.9"
 dependencies = [
     "pytest",
     "ayon-python-api",
     "pytest-print",
     "requests ~= 2.17",
-    "ruff>=0.15.7",
 ]
 
 [project.entry-points.pytest11]
@@ -107,7 +106,6 @@ ignore = [
     "suspicious-subprocess-import",    # subprocess module is possibly insecure
     "import-outside-top-level", # import must be on top of the file
     "missing-copyright-notice",  # missing copyright header
-    "non-pep604-annotation-optional",
     "assert",    # use of assert
     "magic-value-comparison",
     "private-member-access"

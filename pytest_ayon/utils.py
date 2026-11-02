@@ -19,7 +19,10 @@ def create_file_list(  # ruff: ignore[too-many-arguments, too-many-positional-ar
         version: int,
         ext: str,
         frame_start: int,
-        frame_end: int) -> list[dict]:
+        frame_end: int,
+        *,
+        root_name: str = "work",
+        product_type: str = "render") -> list[dict]:
     """Creates a list of file structures.
 
      Using given project name and number of files
@@ -33,6 +36,8 @@ def create_file_list(  # ruff: ignore[too-many-arguments, too-many-positional-ar
         ext: Extension to be used in file names.
         frame_start: Start frame to use for the frame range.
         frame_end: End frame to use for the frame range.
+        root_name: Name of the anatomy root used in file paths.
+        product_type: Product type used in file paths.
 
     Returns:
         list: List of file structures.
@@ -49,8 +54,8 @@ def create_file_list(  # ruff: ignore[too-many-arguments, too-many-positional-ar
             "id": uuid.uuid4().hex,
             "name": file_name,
             "path": (
-                f"{{root[work]}}/{project_name}/{asset_name}/publish"
-                f"/render/v{version:03d}/{file_name}"),
+                f"{{root[{root_name}]}}/{project_name}/{asset_name}/publish"
+                f"/{product_type}/v{version:03d}/{file_name}"),
             "size": random.randint(100000, 1000000),  # ruff: ignore[suspicious-non-cryptographic-random-usage]
             "hash": hashlib.md5(file_name.encode()).hexdigest(),  # ruff: ignore[hashlib-insecure-hash-function]
             "hashType": "md5"
@@ -70,7 +75,12 @@ def create_representation(  # ruff: ignore[too-many-arguments, too-many-position
         work_root: str,
         start_frame: int,
         end_frame: int,
-        representation_name: str) -> dict:
+        representation_name: str,
+        *,
+        root_name: str = "work",
+        product_type: str = "render",
+        task_type: str = "Rendering",
+        task_short: str = "rnd") -> dict:
     """Create a representation file list.
 
     Args:
@@ -86,6 +96,10 @@ def create_representation(  # ruff: ignore[too-many-arguments, too-many-position
         start_frame (int): The start frame.
         end_frame (int): The end frame.
         representation_name (str): The representation name.
+        root_name (str): The name of the anatomy root `work_root` belongs to.
+        product_type (str): The product type.
+        task_type (str): The task type.
+        task_short (str): The task type short name.
 
     Returns:
         dict: The representation file list.
@@ -94,21 +108,21 @@ def create_representation(  # ruff: ignore[too-many-arguments, too-many-position
     context_data = {
         "ext": "exr",
         "root": {
-            "work": work_root
+            root_name: work_root
         },
         "task": {
             "name": task_name,
-            "type": "Rendering",
-            "short": "rnd"
+            "type": task_type,
+            "short": task_short
         },
         "user": "Test",
         "folder": {
             "name": folder_name,
         },
-        "family": "render",
+        "family": product_type,
         "product": {
             "name": product_name,
-            "type": "render"
+            "type": product_type
         },
         "project": {
             "code": project_code,
@@ -122,7 +136,9 @@ def create_representation(  # ruff: ignore[too-many-arguments, too-many-position
 
     file_list = create_file_list(project_name, project_code, folder_name,
                                  product_name, version, "exr",
-                                 start_frame, end_frame)
+                                 start_frame, end_frame,
+                                 root_name=root_name,
+                                 product_type=product_type)
 
     return {
         "name": representation_name,

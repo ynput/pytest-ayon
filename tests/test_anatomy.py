@@ -135,3 +135,51 @@ def test_project_anatomy_overrides_applied() -> None:
     result = _resolve(session, overrides={"templates": {"y": 2}})
     assert result["templates"] == {"x": 1, "y": 2}
     assert ANATOMY["templates"] == {"x": 1}
+
+
+@pytest.mark.parametrize(
+    "project_anatomy_fallback_presets", [()], indirect=True)
+def test_fallback_presets_indirect(
+        project_anatomy_fallback_presets: tuple[str, ...]) -> None:
+    """Test that fallback presets honor indirect parametrization."""
+    assert project_anatomy_fallback_presets == ()
+
+
+@pytest.mark.parametrize(
+    "project_anatomy_overrides", [{"templates": {"y": 2}}], indirect=True)
+def test_anatomy_overrides_indirect(
+        project_anatomy_overrides: dict) -> None:
+    """Test that anatomy overrides honor indirect parametrization."""
+    assert project_anatomy_overrides == {"templates": {"y": 2}}
+
+
+def test_create_links_skips_out_of_range_pairs() -> None:
+    """Test that _create_links skips pairs with out-of-range indices."""
+    session = MagicMock()
+    session.post.return_value = _response(plugin.STATUS_OK, {"id": "link"})
+    representations = [
+        plugin.IdNamePair(name=f"r{i}", id=f"id{i}") for i in range(2)]
+    links = plugin._create_links(
+        session, "http://x", "p", representations,
+        [(-1, 0, "neg"), (0, 2, "high"), (0, 1, "ok")])
+    assert links == ["link"]
+    assert session.post.call_count == 1
+
+
+def test_create_representation_uses_given_root_and_types() -> None:
+    """Test that root name and types propagate into the representation."""
+    template = [{"directory": "{root[publish]}/d", "file": "f.exr"}]
+    rep = plugin.create_representation(
+        "proj", "P", "folder", "task", "modelMain", 1, "vid",
+        template, "/mnt/publish", 1001, 1003, "exr_1",
+        root_name="publish", product_type="model",
+        task_type="Modeling", task_short="mdl")
+    context = rep["data"]["context"]
+    assert context["root"] == {"publish": "/mnt/publish"}
+    assert context["product"]["type"] == "model"
+    assert context["family"] == "model"
+    assert context["task"] == {
+        "name": "task", "type": "Modeling", "short": "mdl"}
+    for file_info in rep["files"]:
+        assert file_info["path"].startswith("{root[publish]}/")
+        assert "/model/v001/" in file_info["path"]

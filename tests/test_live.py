@@ -42,7 +42,7 @@ def test_fetch_preset_parses(ayon_server_session: requests.Session,
     url, _ = ayon_connection_env
     anatomy = plugin._fetch_anatomy_preset(ayon_server_session, url, preset)
     assert anatomy is not None
-    assert plugin._first_work_root(anatomy)["name"] == "work"
+    assert plugin._first_work_root(anatomy) in anatomy["roots"]
     assert plugin._pick_named_item_name(anatomy["task_types"])
     assert plugin._pick_named_item_name(anatomy["folder_types"])
 
