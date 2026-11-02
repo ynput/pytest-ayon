@@ -13,6 +13,7 @@ from .plugin import (
                      project_anatomy_preset_name,
                      project_params,
                      project_root_path,
+                     session_tmp_path,
 )
 from .server import (
                      DEFAULT_PROJECT_PARAMS,
@@ -52,6 +53,7 @@ __all__ = [
                      "project_root_path",
                      "register_site",
                      "resolve_anatomy",
+                     "session_tmp_path",
                      "unregister_site",
 ]
 

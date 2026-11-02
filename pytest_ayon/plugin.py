@@ -57,11 +57,13 @@ class AddonVersion(NamedTuple):
 
 
 @pytest.fixture(scope="session")
-def tmp_path(tmp_path_factory: pytest.TempPathFactory) -> Path:
-    """Get the temporary directory path.
+def session_tmp_path(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """Get a temporary directory shared by the whole test session.
+
+    Use pytest's built-in `tmp_path` for a per-test directory.
 
     Returns:
-        Path: The temporary directory path.
+        Path: The session-wide temporary directory path.
 
     """
     return tmp_path_factory.mktemp("data")

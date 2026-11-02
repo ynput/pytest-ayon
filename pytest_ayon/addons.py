@@ -56,7 +56,7 @@ def imprint_test_version(
 def build_addon_package(
         printer_session: Any,  # ruff:ignore[any-type] (printer function)
         imprint_test_version: str,
-        tmp_path: Path,
+        session_tmp_path: Path,
         project_root_path: Path) -> tuple[str, Path]:
     """Build the addon package.
 
@@ -66,7 +66,8 @@ def build_addon_package(
     Args:
         printer_session (function): The printer function.
         imprint_test_version (str): The test version of the package.
-        tmp_path (pathlib.Path): The temporary directory path.
+        session_tmp_path (pathlib.Path): The session-wide temporary
+            directory path.
         project_root_path (pathlib.Path): The project root path.
 
     Returns:
@@ -79,7 +80,7 @@ def build_addon_package(
     args = [
         "python",
         (project_root_path / "create_package.py").as_posix(),
-        "-o", tmp_path.as_posix(),
+        "-o", session_tmp_path.as_posix(),
     ]
     process = subprocess.Popen(
         args,
@@ -94,7 +95,7 @@ def build_addon_package(
     assert process.returncode == 0, (
         f"Script failed with return code: {process.returncode}")
 
-    return imprint_test_version, tmp_path
+    return imprint_test_version, session_tmp_path
 
 
 def _wait_for_the_event(
