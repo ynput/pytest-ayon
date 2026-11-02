@@ -38,6 +38,9 @@ DEFAULT_PROJECT_PARAMS: dict[str, Any] = {
     "folder_type": "Asset",
     "representation_count": 4,
     "representation_name_prefix": "exr",
+    "ext": "exr",
+    "template_name": "publish",
+    # `None` creates single-file representations without a frame range
     "frame_start": 1001,
     "frame_end_min": 1020,
     "frame_end_max": 1200,
@@ -528,14 +531,7 @@ def _create_representations(  # ruff: ignore[too-many-arguments]
     Returns:
         list[IdNamePair]: The created representations.
 
-    Raises:
-        ValueError: If the anatomy defines no publish templates.
-
     """
-    publish_templates = anatomy.get("templates", {}).get("publish", [])
-    if not publish_templates:
-        msg = "Project anatomy must define templates.publish"
-        raise ValueError(msg)
     root_entry = _first_work_root(anatomy)
     work_root = _work_root_path(root_entry)
     task_short = next(
@@ -547,14 +543,19 @@ def _create_representations(  # ruff: ignore[too-many-arguments]
     representations = []
     for i in range(1, params["representation_count"] + 1):
         representation_name = f"{params['representation_name_prefix']}_{i}"
+        frame_start = params["frame_start"]
+        frame_end = None if frame_start is None else random.randint(  # ruff: ignore[suspicious-non-cryptographic-random-usage]
+            params["frame_end_min"], params["frame_end_max"])
         rep_data = create_representation(
             project_name, project_code, folder_name, task_name,
             product_name, version, version_id,
-            publish_templates,
+            anatomy.get("templates") or {},
             work_root,
-            params["frame_start"],
-            random.randint(params["frame_end_min"], params["frame_end_max"]),  # ruff: ignore[suspicious-non-cryptographic-random-usage]
             representation_name,
+            template_name=params["template_name"],
+            ext=params["ext"],
+            frame_start=frame_start,
+            frame_end=frame_end,
             root_name=root_entry["name"],
             product_type=product_type,
             task_type=task_type,

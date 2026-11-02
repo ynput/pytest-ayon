@@ -168,10 +168,10 @@ def test_create_links_skips_out_of_range_pairs() -> None:
 
 def test_create_representation_uses_given_root_and_types() -> None:
     """Test that root name and types propagate into the representation."""
-    template = [{"directory": "{root[publish]}/d", "file": "f.exr"}]
     rep = server.create_representation(
         "proj", "P", "folder", "task", "modelMain", 1, "vid",
-        template, "/mnt/publish", 1001, 1003, "exr_1",
+        TEMPLATES, "/mnt/publish", "exr_1",
+        frame_start=1001, frame_end=1003,
         root_name="publish", product_type="model",
         task_type="Modeling", task_short="mdl")
     context = rep["data"]["context"]
@@ -182,7 +182,75 @@ def test_create_representation_uses_given_root_and_types() -> None:
         "name": "task", "type": "Modeling", "short": "mdl"}
     for file_info in rep["files"]:
         assert file_info["path"].startswith("{root[publish]}/")
-        assert "/model/v001/" in file_info["path"]
+        assert "/model/modelMain/v001/" in file_info["path"]
+
+
+TEMPLATES = {
+    "publish": [
+        {"name": "other", "directory": "other", "file": "other"},
+        {"name": "default", "directory": "pub/v{version}", "file": "f.{ext}"},
+    ],
+    "hero": [{"name": "default", "directory": "pub/hero", "file": "h.{ext}"}],
+}
+
+
+def _representation(**kwargs) -> dict:  # ruff:ignore[missing-type-kwargs]
+    return server.create_representation(
+        "proj", "P", "folder", "task", "renderMain", 3, "vid",
+        TEMPLATES, "/mnt/work", "rep", **kwargs)
+
+
+def test_create_representation_frame_range_inclusive() -> None:
+    """Test that the frame range is inclusive and stored in attributes."""
+    rep = _representation(frame_start=1001, frame_end=1003)
+    names = [file_info["name"] for file_info in rep["files"]]
+    assert names == [
+        f"P_folder_renderMain_v003.{frame}.exr"
+        for frame in (1001, 1002, 1003)]
+    assert rep["attrib"]["frameStart"] == 1001
+    assert rep["attrib"]["frameEnd"] == 1003
+    assert rep["attrib"]["template"] == "pub/v{version}/f.{ext}"
+
+
+def test_create_representation_single_file() -> None:
+    """Test that omitting the frame range creates a single file."""
+    rep = _representation(ext="abc")
+    assert [file_info["name"] for file_info in rep["files"]] == [
+        "P_folder_renderMain_v003.abc"]
+    assert "frameStart" not in rep["attrib"]
+    assert "frameEnd" not in rep["attrib"]
+    assert rep["data"]["context"]["ext"] == "abc"
+    assert rep["data"]["context"]["representation"] == "abc"
+
+
+def test_create_representation_hero() -> None:
+    """Test that the hero template uses hero paths and template."""
+    rep = _representation(template_name="hero", frame_start=1, frame_end=2)
+    assert rep["attrib"]["template"] == "pub/hero/h.{ext}"
+    for file_info in rep["files"]:
+        assert "/renderMain/hero/" in file_info["path"]
+        assert "_hero." in file_info["name"]
+
+
+@pytest.mark.parametrize("kwargs", [
+    {"template_name": "work"},
+    {"frame_start": 1001},
+    {"frame_end": 1001},
+    {"frame_start": 1010, "frame_end": 1001},
+])
+def test_create_representation_invalid(kwargs: dict) -> None:
+    """Test that invalid template names and frame ranges are rejected."""
+    with pytest.raises(ValueError):  # ruff:ignore[pytest-raises-too-broad]
+        _representation(**kwargs)
+
+
+def test_create_representation_missing_template() -> None:
+    """Test that a missing template category is rejected."""
+    with pytest.raises(ValueError, match="hero"):
+        server.create_representation(
+            "proj", "P", "folder", "task", "renderMain", 1, "vid",
+            {"publish": TEMPLATES["publish"]}, "/mnt/work", "rep",
+            template_name="hero")
 
 
 def test_resolve_anatomy_function() -> None:

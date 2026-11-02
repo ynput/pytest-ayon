@@ -109,6 +109,37 @@ def test_project_contents(project: Any) -> None:  # ruff:ignore[any-type]
     assert len(project.links) == 2
 
 
+@pytest.mark.parametrize("project_params", [{
+    "template_name": "hero",
+    "ext": "abc",
+    "frame_start": None,
+    "representation_count": 2,
+}], indirect=True)
+def test_project_hero_single_file(
+        project: Any,  # ruff:ignore[any-type]
+        ayon_server_session: requests.Session,
+        ayon_connection_env: tuple[str, str]) -> None:
+    """Test single-file hero representations created through the fixture.
+
+    Args:
+        project (Any): The project object.
+        ayon_server_session (requests.Session): The session to use
+            for requests.
+        ayon_connection_env (tuple[str, str]): The AYON server URL and token.
+
+    """
+    url, _ = ayon_connection_env
+    for representation in project.representations:
+        response = ayon_server_session.get(
+            f"{url}/api/projects/{project.project_name}"
+            f"/representations/{representation.id}")
+        assert response.status_code == requests.codes.ok
+        data = response.json()
+        assert len(data["files"]) == 1
+        assert data["files"][0]["path"].endswith("_hero.abc")
+        assert "/hero/" in data["attrib"]["template"]
+
+
 @pytest.fixture(scope="module")
 def module_project(
         ayon_server_session: requests.Session,

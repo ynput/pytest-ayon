@@ -51,6 +51,18 @@ def test_something(project): ...
 
 `project_anatomy_overrides` is deep-merged on top of the resolved anatomy.
 
+Representations created by `project` are controlled through `project_params`:
+`ext` (default `"exr"`), `template_name` (`"publish"` or `"hero"`) and the
+frame range (`frame_start`, `frame_end_min`, `frame_end_max`; set
+`frame_start` to `None` for single-file representations):
+
+```python
+@pytest.mark.parametrize("project_params", [
+    {"template_name": "hero", "ext": "abc", "frame_start": None},
+], indirect=True)
+def test_hero_cache(project): ...
+```
+
 ### Plain functions
 
 The fixtures are thin wrappers around plain functions in `pytest_ayon.server`
