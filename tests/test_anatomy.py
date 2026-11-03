@@ -270,6 +270,30 @@ def test_expand_template_references_invalid(template: str, match: str) -> None:
         utils.expand_template_references(template, templates)
 
 
+def test_create_representation_hierarchy() -> None:
+    """Test that hierarchy lands in the context and in file paths."""
+    rep = _representation(
+        frame_start=1001, frame_end=1001, hierarchy="shots/sq01")
+    assert rep["data"]["context"]["hierarchy"] == "shots/sq01"
+    for file_info in rep["files"]:
+        assert file_info["path"].startswith(
+            "{root[work]}/proj/shots/sq01/folder/publish/")
+
+
+def test_create_representation_no_hierarchy_has_no_empty_segment() -> None:
+    """Test that a top-level folder yields no empty path segment."""
+    rep = _representation()
+    assert not rep["data"]["context"]["hierarchy"]
+    assert rep["files"][0]["path"].startswith("{root[work]}/proj/folder/")
+
+
+def test_folder_hierarchy() -> None:
+    """Test that the folder's parents are derived from its path."""
+    assert server._folder_hierarchy({"path": "/a/b/c"}) == "a/b"
+    assert not server._folder_hierarchy({"path": "/c"})
+    assert not server._folder_hierarchy({})
+
+
 def test_create_representation_hero() -> None:
     """Test that the hero template uses hero paths and template."""
     rep = _representation(template_name="hero", frame_start=1, frame_end=2)
