@@ -244,7 +244,8 @@ def test_create_representation_expands_references() -> None:
         frame_start=1001, frame_end=1002)
     template = rep["attrib"]["template"]
     assert "@" not in template
-    assert template == "pub/v{version:0>3}/f_v{version:0>3}<.{frame:0>4}>.{ext}"
+    assert template == (
+        "pub/v{version:0>3}/f_v{version:0>3}<.{frame:0>4}>.{ext}")
 
 
 def test_default_anatomy_templates_have_no_references() -> None:
@@ -257,7 +258,7 @@ def test_default_anatomy_templates_have_no_references() -> None:
         assert "{@" not in rep["attrib"]["template"]
 
 
-@pytest.mark.parametrize("template, match", [
+@pytest.mark.parametrize(("template", "match"), [
     ("{@missing}", "Unknown template reference"),
     ("{@publish}", "Unknown template reference"),
     ("{@a}", "Circular"),

@@ -138,8 +138,10 @@ def _pick_template(
 _TEMPLATE_REFERENCE = re.compile(r"\{@([^{}]+)\}")
 
 
-def expand_template_references(
-        template: str, templates: dict[str, Any]) -> str:
+def expand_template_references(  # ruff: ignore[docstring-extraneous-exception]
+        template: str,
+        templates: dict[str, Any],
+        _chain: tuple[str, ...] = ()) -> str:
     """Expand `{@name}` references to other anatomy template entries.
 
     References point to scalar entries of the anatomy `templates` section,
@@ -149,6 +151,8 @@ def expand_template_references(
     Args:
         template (str): Template string, possibly with `{@name}` references.
         templates (dict[str, Any]): The anatomy `templates` section.
+        _chain (tuple[str, ...]): References being expanded; internal,
+            used to detect circular references.
 
     Returns:
         str: The template with all references expanded.
@@ -157,22 +161,20 @@ def expand_template_references(
         ValueError: If a reference is unknown or circular.
 
     """
-    def _expand(value: str, chain: tuple[str, ...]) -> str:
-        def _replace(match: re.Match) -> str:
-            name = match.group(1)
-            if name in chain:
-                msg = (f"Circular template reference: "
-                       f"{' -> '.join((*chain, name))}")
-                raise ValueError(msg)
-            target = templates.get(name)
-            if not isinstance(target, (str, int, float)):
-                msg = f"Unknown template reference `{{@{name}}}`"
-                raise ValueError(msg)
-            return _expand(str(target), (*chain, name))
+    def _replace(match: re.Match) -> str:
+        name = match.group(1)
+        if name in _chain:
+            msg = (f"Circular template reference: "
+                   f"{' -> '.join((*_chain, name))}")
+            raise ValueError(msg)
+        target = templates.get(name)
+        if target is None or isinstance(target, (list, dict)):
+            msg = f"Unknown template reference `{{@{name}}}`"
+            raise ValueError(msg)
+        return expand_template_references(
+            str(target), templates, (*_chain, name))
 
-        return _TEMPLATE_REFERENCE.sub(_replace, value)
-
-    return _expand(template, ())
+    return _TEMPLATE_REFERENCE.sub(_replace, template)
 
 
 def create_representation(  # ruff: ignore[too-many-arguments, too-many-positional-arguments]
