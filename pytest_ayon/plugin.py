@@ -12,24 +12,36 @@ TODO (antirotor):
 from __future__ import annotations
 
 import contextlib
+import copy
 import os
-import random
-import secrets
-from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Generator, NamedTuple, Optional
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Callable,
+    Generator,
+    NamedTuple,
+    Optional,
+)
 
 import pytest
-import requests
 
-from .utils import (
-    STATUS_CREATED,
-    STATUS_NO_CONTENT,
-    STATUS_OK,
-    create_representation,
+from .server import (
+    DEFAULT_PROJECT_PARAMS,
+    IdNamePair,
+    ProjectInfo,
+    create_project,
+    create_session,
+    delete_project,
+    populate_project,
+    resolve_anatomy,
 )
 
 if TYPE_CHECKING:
     from pathlib import Path
+
+    import requests
+
+__all__ = ["IdNamePair", "ProjectInfo"]
 
 
 class AddonVersion(NamedTuple):
@@ -44,43 +56,14 @@ class AddonVersion(NamedTuple):
     version: str
 
 
-@dataclass
-class IdNamePair:
-    """Id and name pair."""
-    id: str
-    name: str
-
-
-@dataclass
-class ProjectInfo:
-    """Project information.
-
-    Deprecated:
-        folder, task, product, version are deprecated. Use their
-        entity counterparts instead.
-
-    """
-    project_name: str
-    project_code: str
-    project_root_folders: dict[str, str]
-    folder: Optional[IdNamePair] = None
-    folder_entity: Optional[dict] = None
-    task: Optional[IdNamePair] = None
-    task_entity: Optional[dict] = None
-    product: Optional[IdNamePair] = None
-    product_entity: Optional[dict] = None
-    version: Optional[IdNamePair] = None
-    version_entity: Optional[dict] = None
-    representations: Optional[list[IdNamePair]] = field(default_factory=list)
-    links: Optional[list[str]] = field(default_factory=list)
-
-
 @pytest.fixture(scope="session")
-def tmp_path(tmp_path_factory: pytest.TempPathFactory) -> Path:
-    """Get the temporary directory path.
+def session_tmp_path(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """Get a temporary directory shared by the whole test session.
+
+    Use pytest's built-in `tmp_path` for a per-test directory.
 
     Returns:
-        Path: The temporary directory path.
+        Path: The session-wide temporary directory path.
 
     """
     return tmp_path_factory.mktemp("data")
@@ -131,9 +114,7 @@ def ayon_server_session(
 
     """
     _, api_key = ayon_connection_env
-    session = requests.Session()
-    session.headers.update({"x-api-key": api_key})
-    return session
+    return create_session(api_key)
 
 
 @pytest.fixture(scope="session")
@@ -159,304 +140,157 @@ def addon_version(project_root_path: Path) -> NamedTuple:
     return AddonVersion(name=name, version=version)
 
 
+def pytest_addoption(parser: pytest.Parser) -> None:
+    """Register pytest-ayon command line options."""
+    parser.addoption(
+        "--ayon-anatomy-preset",
+        default="__primary__",
+        help="Server anatomy preset used for test projects.",
+    )
+
+
 @pytest.fixture
-def project(  # noqa: PLR0914, PLR0915
-        printer,  # noqa: ANN001 (fixture)
-        ayon_connection_env: tuple[str, str]
-) -> Generator[ProjectInfo, None, None]:
+def project_anatomy_preset_name(request: pytest.FixtureRequest) -> str:
+    """Preferred server anatomy preset name.
+
+    Can be overridden via indirect parametrization of this fixture,
+    otherwise taken from `--ayon-anatomy-preset`.
+
+    Args:
+        request (pytest.FixtureRequest): The pytest fixture request object.
+
+    Returns:
+        str: The preferred server anatomy preset name.
+
+    """
+    if hasattr(request, "param"):
+        return request.param
+    return request.config.getoption("ayon_anatomy_preset")
+
+
+@pytest.fixture
+def project_anatomy_fallback_presets(
+        request: pytest.FixtureRequest) -> tuple[str, ...]:
+    """Fallback presets tried if preferred anatomy preset is not available.
+
+    Args:
+        request (pytest.FixtureRequest): The pytest fixture request object.
+
+    Returns:
+        tuple[str, ...]: The fallback anatomy preset names.
+
+    """
+    if hasattr(request, "param"):
+        return tuple(request.param)
+    return ("__builtin__",)
+
+
+@pytest.fixture
+def project_anatomy_overrides(
+        request: pytest.FixtureRequest) -> dict[str, Any]:
+    """Optional anatomy override data merged on top of resolved anatomy.
+
+    Args:
+        request (pytest.FixtureRequest): The pytest fixture request object.
+
+    Returns:
+        dict[str, Any]: The anatomy override data.
+
+    """
+    if hasattr(request, "param"):
+        return request.param
+    return {}
+
+
+@pytest.fixture
+def project_anatomy(
+        ayon_connection_env: tuple[str, str],
+        ayon_server_session: requests.Session,
+        project_anatomy_preset_name: str,
+        project_anatomy_fallback_presets: tuple[str, ...],
+        project_anatomy_overrides: dict[str, Any]) -> dict[str, Any]:
+    """Resolve anatomy from presets, with fallback to built-in defaults.
+
+    Args:
+        ayon_connection_env (tuple[str, str]): The Ayon server
+            connection environment.
+        ayon_server_session (requests.Session): The HTTP session for
+            server communication.
+        project_anatomy_preset_name (str): The preferred anatomy preset name.
+        project_anatomy_fallback_presets (tuple[str, ...]): Fallback anatomy
+            preset names.
+        project_anatomy_overrides (dict[str, Any]): Anatomy override data.
+
+    Returns:
+        dict[str, Any]: The resolved anatomy data.
+
+    """
+    server_url, _ = ayon_connection_env
+    return resolve_anatomy(
+        ayon_server_session, server_url,
+        project_anatomy_preset_name,
+        project_anatomy_fallback_presets,
+        project_anatomy_overrides)
+
+
+@pytest.fixture
+def project_params(request: pytest.FixtureRequest) -> dict[str, Any]:
+    """Project fixture defaults, overridable via indirect parametrization.
+
+    Returns:
+        dict[str, Any]: The combined project parameters.
+
+    """
+    return {**DEFAULT_PROJECT_PARAMS, **getattr(request, "param", {})}
+
+
+@pytest.fixture
+def project(
+        printer: Callable[[Any], None],
+        ayon_connection_env: tuple[str, str],
+        project_anatomy: dict[str, Any],
+        project_params: dict[str, Any]) -> Generator[ProjectInfo, None, None]:
     """Set up a project with some data and yield the project info.
 
     This will create a project with a folder, a task, a product, a version,
     and some representations. It will also create some links between the
-    representations.
-
-    TODO(antirotor): split this fixture into smaller fixtures.
-        Make it more modular.
+    representations. See `pytest_ayon.server.populate_project`.
 
     Args:
         printer: The printer fixture.
         ayon_connection_env: The AYON connection environment fixture.
+        project_anatomy: The resolved project anatomy.
+        project_params: Parameters controlling the created entities.
 
     Yields:
         ProjectInfo: The project information.
 
     """
     server_url, api_key = ayon_connection_env
-    token = secrets.token_hex(5)
-    project_name = f"{token}_test_project"
-    project_code = f"TP_{token[:3]}"
-    folder_name = f"t_folder_{secrets.token_hex(3)}"
-    product_name = "renderMain"
-    version = 1
-    task_name = "rendering"
-
-    printer(f"creating project {project_name}...")
-    session = requests.Session()
-    session.headers.update({"x-api-key": api_key})
-
-    project_data = {
-        "name": project_name,
-        "code": project_code,
-        "anatomy": {
-            "roots": [
-                {
-                    "name": "work",
-                    "windows": "C:/projects",
-                    "linux": "/mnt/share/projects",
-                    "darwin": "/Volumes/projects"
-                }
-            ],
-            "templates": {
-                "version_padding": 3,
-                "version": "v{version:0>{@version_padding}}",
-                "frame_padding": 4,
-                "frame": "{frame:0>{@frame_padding}}",
-                "work": [
-                    {
-                        "name": "default",
-                        "directory": (
-                            "{root[work]}/{project[name]}/{hierarchy}/"
-                            "{folder[name]}/work/{task[name]}"),
-                        "file": (
-                            "{project[code]}_{folder[name]}_{task[name]}_"
-                            "{@version}<_{comment}>.{ext}")
-                    }
-                ],
-                "publish": [
-                    {
-                        "name": "default",
-                        "directory": (
-                            "{root[work]}/{project[name]}/{hierarchy}/"
-                            "{folder[name]}/publish/{product[type]}/"
-                            "{product[name]}/v{version:0>3}"  # noqa: RUF027
-                        ),
-                        "file": (
-                            "{project[code]}_{folder[name]}_{product[name]}"
-                            "_v{version:0>3}<_{output}><.{frame:0>4}>"
-                            "<_{udim}>.{ext}"
-                        )
-                    }
-                ],
-                "hero": [
-                    {
-                        "name": "default",
-                        "directory": "{root[work]}/{project[name]}/"
-                                     "{hierarchy}/{folder[name]}/publish/"
-                                     "{product[type]}"
-                                     "/{product[name]}/hero",
-                        "file": "{project[code]}_{folder[name]}_"
-                                "{product[name]}_hero<_{output}>"
-                                "<.{@frame}><_{udim}>.{ext}"
-                    }
-                ],
-            },
-            "attributes": {
-                "fps": 25,
-                "resolutionWidth": 1920,
-                "resolutionHeight": 1080,
-                "pixelAspect": 1,
-                "clipIn": 1,
-                "clipOut": 1,
-                "frameStart": 1001,
-                "frameEnd": 1050,
-                "handleStart": 0,
-                "handleEnd": 0,
-                "startDate": "2021-01-01T00:00:00+00:00",
-                "endDate": "2021-01-01T00:00:00+00:00",
-                "description": "A very nice entity",
-                "applications": [],
-                "tools": []
-            },
-            "folder_types": [
-                {
-                    "name": "Asset",
-                    "icon": "folder",
-                    "original_name": "Asset"
-                }
-            ],
-            "task_types": [
-                {
-                    "name": "rendering",
-                    "shortName": "rendering",
-                    "icon": "",
-                    "original_name": "rendering"
-                }
-            ],
-            "linkTypes": [
-                {
-                    "name": "relationship|representation|representation",
-                    "link_type": "relationship",
-                    "input_type": "representation",
-                    "output_type": "representation",
-                    "data": {
-                        "color": "#73149F",
-                    }
-                }
-            ],
-            "statuses": [
-                {
-                    "name": "not_started",
-                    "shortName": "not_started",
-                    "state": "not_started",
-                    "icon": "",
-                    "color": "#cacaca",
-                    "original_name": "string"
-                }
-            ]
-        },
-        "library": False
-    }
-    response = session.post(
-        f"{server_url}/api/projects", json=project_data)
-    assert response.status_code == STATUS_CREATED, response.text
-
-    # due to the bug in AYON server, create `relationship` link type
-    # TODO(antirotor): remove this once the bug is fixed
-    response = session.put(
-        (f"{server_url}/api/projects/{project_name}/links/types/"
-         "relationship|representation|representation"),
-        json={
-            "data": {
-                "color": "#73149F",
-            }
-        }
-    )
-    assert response.status_code == STATUS_NO_CONTENT
-
-    # fill project with some data
-    # Create a folder
-    printer(f"filling project {project_name} with data...")
-    response = session.post(
-        f"{server_url}/api/projects/{project_name}/folders", json={
-            "name": folder_name,
-            "folderType": "Asset",
-        })
-    assert response.status_code == STATUS_CREATED
-    folder_id = response.json()["id"]
-    response = session.get(
-        f"{server_url}/api/projects/{project_name}/folders/{folder_id}")
-    assert response.status_code == STATUS_OK
-    folder_entity = response.json()
-    printer(folder_entity)
-
-    # Create a task
-    response = session.post(
-        f"{server_url}/api/projects/{project_name}/tasks", json={
-            "name": task_name,
-            "taskType": "rendering",
-            "folderId": folder_entity["id"],
-        })
-    assert response.status_code == STATUS_CREATED
-    task_entity = response.json()
-
-    # Create a product
-    response = session.post(
-        f"{server_url}/api/projects/{project_name}/products",
-        json={
-            "name": product_name,
-            "folderId": folder_entity["id"],
-            "productType": "render",
-        })
-    assert response.status_code == STATUS_CREATED
-    product_entity = response.json()
-
-    # Create a version
-    response = session.post(
-        f"{server_url}/api/projects/{project_name}/versions", json={
-            "version": version,
-            "productId": product_entity["id"],
-            "taskId": task_entity["id"],
-        })
-    assert response.status_code == STATUS_CREATED
-    version_entity = response.json()
-
-    # Create a representations
-    representations = []
-    for i in range(1, 5):
-        representation_name = f"exr_{i}"
-        rep_data = create_representation(
-            project_name, project_code, folder_name, task_name,
-            product_name, version, version_entity["id"],
-            project_data["anatomy"]["templates"]["publish"],
-            project_data["anatomy"]["roots"][0]["windows"],
-            1001,
-            random.randint(1020, 1200),  # noqa: S311
-            representation_name
-        )
-
-        response = session.post(
-            f"{server_url}/api/projects/{project_name}/representations",
-            json=rep_data)
-        assert response.status_code == STATUS_CREATED
-        printer(
-            f"Created representation {representation_name} with "
-            f"{len(rep_data['files'])} files"
-        )
-        representations.append(IdNamePair(
-            name=representation_name, id=response.json()["id"]))
-
-    # link first representation to the second one
-    response = session.post(
-        f"{server_url}/api/projects/{project_name}/links",
-        json={
-            "input": representations[0].id,
-            "output": representations[1].id,
-            "name": "relationship_2",
-            "link": "relationship|representation|representation",
-            "linkType": "relationship|representation|representation",
-            "data": {}
-        }
-    )
-    assert response.status_code == STATUS_OK, response.json()
-    links = [response.json()["id"]]
-    # link second representation to the third one
-    response = session.post(
-        f"{server_url}/api/projects/{project_name}/links",
-        json={
-            "input": representations[2].id,
-            "output": representations[3].id,
-            "name": "relationship_1",
-            "link": "relationship|representation|representation",
-            "linkType": "relationship|representation|representation",
-            "data": {}
-        }
-    )
-    assert response.status_code == STATUS_OK, response.json()
-    links.append(response.json()["id"])
-
-    yield ProjectInfo(
-        project_name=project_name,
-        project_code=project_code,
-        project_root_folders=project_data["anatomy"]["roots"][0],
-        folder=IdNamePair(name=folder_name, id=folder_entity["id"]),
-        folder_entity=folder_entity,
-        task=IdNamePair(name=task_name, id=task_entity["id"]),
-        task_entity=task_entity,
-        product=IdNamePair(name=product_name, id=product_entity["id"]),
-        product_entity=product_entity,
-        version=IdNamePair(name=f"v{version:03d}", id=version_entity["id"]),
-        version_entity=version_entity,
-        representations=representations,
-        links=links
-    )
-
-    # teardown the project
-    printer(f"tearing down project {project_name}...")
-    response = session.delete(
-        f"{server_url}/api/projects/{project_name}")
-    assert response.status_code == STATUS_NO_CONTENT
+    session = create_session(api_key)
+    info = create_project(
+        session, server_url, project_anatomy,
+        library=project_params["library"])
+    printer(f"created project {info.project_name}, filling with data...")
+    try:
+        yield populate_project(
+            session, server_url, info, project_anatomy, project_params)
+    finally:
+        printer(f"tearing down project {info.project_name}...")
+        delete_project(session, server_url, info.project_name)
 
 
 @pytest.fixture
-def empty_project(  # noqa: PLR0913, PLR0917
+def empty_project(  # ruff: ignore[too-many-arguments, too-many-positional-arguments]
     request: pytest.FixtureRequest,
-    printer: Any,  # noqa: ANN401 (fixture)
+    printer: Any,  # ruff: ignore[any-type] (fixture)
     ayon_connection_env: tuple[str, str],
+    project_anatomy: dict[str, Any],
     project_name: Optional[str] = None,
     project_code: Optional[str] = None,
-    folder_types: list[str] = ("Asset", "Episode", "Sequence", "Shot"),
-    task_types: list[str] = ("rendering",),
-    statuses: list[str] = ("not_started",),
+    folder_types: tuple[str, ...] = ("Asset", "Episode", "Sequence", "Shot"),
+    task_types: tuple[str] = ("rendering",),
+    statuses: tuple[str] = ("not_started",),
 ) -> Generator[ProjectInfo, None, None]:
     """Set up an empty project and yield the project info.
 
@@ -467,6 +301,7 @@ def empty_project(  # noqa: PLR0913, PLR0917
         request: The pytest request fixture.
         printer: The printer fixture.
         ayon_connection_env: The AYON connection environment fixture.
+        project_anatomy: The project anatomy fixture.
         project_name: The project name. If None, a random
             name will be generated.
         project_code: The project code. If None, a random
@@ -480,11 +315,9 @@ def empty_project(  # noqa: PLR0913, PLR0917
 
     """
     server_url, api_key = ayon_connection_env
-    token = secrets.token_hex(5)
-
     values = {
-        "project_name": project_name or f"{token}_test_project",
-        "project_code": project_code or f"TP_{token[:3]}",
+        "project_name": project_name,
+        "project_code": project_code,
         "folder_types": folder_types,
         "task_types": task_types,
         "statuses": statuses,
@@ -494,143 +327,42 @@ def empty_project(  # noqa: PLR0913, PLR0917
     if hasattr(request, "param"):
         values.update(request.param)
 
-    printer(f'creating project {values["project_name"]}...')
-    session = requests.Session()
-    session.headers.update({"x-api-key": api_key})
+    project_anatomy = copy.deepcopy(project_anatomy)
+    project_anatomy["folder_types"] = [
+        {
+            "name": folder_type.capitalize(),
+            "icon": "folder",
+            "original_name": folder_type.capitalize(),
+        } for folder_type in values["folder_types"]
+    ]
 
-    project_data = {
-        "name": values["project_name"],
-        "code": values["project_code"],
-        "anatomy": {
-            "roots": [
-                {
-                    "name": "work",
-                    "windows": "C:/projects",
-                    "linux": "/mnt/share/projects",
-                    "darwin": "/Volumes/projects"
-                }
-            ],
-            "templates": {
-                "version_padding": 3,
-                "version": "v{version:0>{@version_padding}}",
-                "frame_padding": 4,
-                "frame": "{frame:0>{@frame_padding}}",
-                "work": [
-                    {
-                        "name": "default",
-                        "directory": "{root[work]}/{project[name]}/"
-                                     "{hierarchy}/{folder[name]}/"
-                                     "work/{task[name]}",
-                        "file": "{project[code]}_{folder[name]}"
-                                "_{task[name]}_{@version}<_{comment}>.{ext}"
-                    }
-                ],
-                "publish": [
-                    {
-                        "name": "default",
-                        "directory": "{root[work]}/{project[name]}/"
-                                     "{hierarchy}/{folder[name]}/"
-                                     "publish/{product[type]}/"
-                                     "{product[name]}/v{version:0>3}",
-                        "file": "{project[code]}_{folder[name]}_"
-                                "{product[name]}_v{version:0>3}<_{output}>"
-                                "<.{frame:0>4}><_{udim}>.{ext}"
-                    }
-                ],
-                "hero": [
-                    {
-                        "name": "default",
-                        "directory": "{root[work]}/{project[name]}/"
-                                     "{hierarchy}/{folder[name]}/publish/"
-                                     "{product[type]}"
-                                     "/{product[name]}/hero",
-                        "file": "{project[code]}_{folder[name]}_"
-                                "{product[name]}_hero<_{output}>"
-                                "<.{@frame}><_{udim}>.{ext}"
-                    }
-                ],
-            },
-            "attributes": {
-                "fps": 25,
-                "resolutionWidth": 1920,
-                "resolutionHeight": 1080,
-                "pixelAspect": 1,
-                "clipIn": 1,
-                "clipOut": 1,
-                "frameStart": 1001,
-                "frameEnd": 1050,
-                "handleStart": 0,
-                "handleEnd": 0,
-                "startDate": "2021-01-01T00:00:00+00:00",
-                "endDate": "2021-01-01T00:00:00+00:00",
-                "description": "A very nice entity",
-                "applications": [],
-                "tools": []
-            },
-            "folder_types": [
-                {
-                    "name": folder_type.capitalize(),
-                    "icon": "folder",
-                    "original_name": folder_type.capitalize(),
-                } for folder_type in values["folder_types"]
-            ],
-            "task_types": [
-                {
-                    "name": task_type.lower(),
-                    "shortName": task_type.lower(),
-                    "icon": "",
-                    "original_name": task_type.lower(),
-                } for task_type in values["task_types"]
-            ],
-            "linkTypes": [
-                {
-                    "name": "relationship|representation|representation",
-                    "link_type": "relationship",
-                    "input_type": "representation",
-                    "output_type": "representation",
-                    "data": {
-                        "color": "#73149F",
-                    }
-                }
-            ],
-            "statuses": [
-                {
-                    "name": status.lower(),
-                    "shortName": status.lower(),
-                    "state": status.lower(),
-                    "icon": "",
-                    "color": "#cacaca",
-                    "original_name": "string"
-                } for status in values["statuses"]
-            ]
-        },
-        "library": False
-    }
-    response = session.post(
-        f"{server_url}/api/projects", json=project_data)
-    assert response.status_code == STATUS_CREATED, response.text
+    project_anatomy["task_types"] = [
+        {
+            "name": task_type.lower(),
+            "shortName": task_type.lower(),
+            "icon": "",
+            "original_name": task_type.lower(),
+        } for task_type in values["task_types"]
+    ]
 
-    # due to the bug in AYON server, create `relationship` link type
-    # TODO (antirotor): remove this once the bug is fixed
-    response = session.put(
-        (f'{server_url}/api/projects/{values["project_name"]}/links/types/'
-         "relationship|representation|representation"),
-        json={
-            "data": {
-                "color": "#73149F",
-            }
-        }
-    )
-    assert response.status_code == STATUS_NO_CONTENT
+    project_anatomy["statuses"] = [
+        {
+            "name": status.lower(),
+            "shortName": status.lower(),
+            "state": status.lower(),
+            "icon": "",
+            "color": "#cacaca",
+            "original_name": "string"
+        } for status in values["statuses"]
+    ]
 
-    yield ProjectInfo(
-        project_name=values["project_name"],
-        project_code=values["project_code"],
-        project_root_folders=project_data["anatomy"]["roots"][0],
-    )
-
-    # teardown the project
-    printer(f'tearing down project {values["project_name"]}...')
-    response = session.delete(
-        f'{server_url}/api/projects/{values["project_name"]}')
-    assert response.status_code == STATUS_NO_CONTENT
+    session = create_session(api_key)
+    info = create_project(
+        session, server_url, project_anatomy,
+        name=values["project_name"], code=values["project_code"])
+    printer(f"created project {info.project_name}")
+    try:
+        yield info
+    finally:
+        printer(f"tearing down project {info.project_name}...")
+        delete_project(session, server_url, info.project_name)
