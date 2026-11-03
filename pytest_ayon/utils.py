@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import random
+import re
 import uuid
 from pathlib import Path
 from typing import Any, Optional
@@ -134,6 +135,46 @@ def _pick_template(
     return entries[0]
 
 
+_TEMPLATE_REFERENCE = re.compile(r"\{@([^{}]+)\}")
+
+
+def expand_template_references(
+        template: str, templates: dict[str, Any]) -> str:
+    """Expand `{@name}` references to other anatomy template entries.
+
+    References point to scalar entries of the anatomy `templates` section,
+    e.g. `{@version}` -> `v{version:0>{@version_padding}}`, which in turn
+    expands to `v{version:0>3}`. Expansion is recursive.
+
+    Args:
+        template (str): Template string, possibly with `{@name}` references.
+        templates (dict[str, Any]): The anatomy `templates` section.
+
+    Returns:
+        str: The template with all references expanded.
+
+    Raises:
+        ValueError: If a reference is unknown or circular.
+
+    """
+    def _expand(value: str, chain: tuple[str, ...]) -> str:
+        def _replace(match: re.Match) -> str:
+            name = match.group(1)
+            if name in chain:
+                msg = (f"Circular template reference: "
+                       f"{' -> '.join((*chain, name))}")
+                raise ValueError(msg)
+            target = templates.get(name)
+            if not isinstance(target, (str, int, float)):
+                msg = f"Unknown template reference `{{@{name}}}`"
+                raise ValueError(msg)
+            return _expand(str(target), (*chain, name))
+
+        return _TEMPLATE_REFERENCE.sub(_replace, value)
+
+    return _expand(template, ())
+
+
 def create_representation(  # ruff: ignore[too-many-arguments, too-many-positional-arguments]
         project_name: str,
         project_code: str,
@@ -220,7 +261,8 @@ def create_representation(  # ruff: ignore[too-many-arguments, too-many-position
     }
 
     attrib: dict[str, Any] = {
-        "template": f"{template['directory']}/{template['file']}",
+        "template": expand_template_references(
+            f"{template['directory']}/{template['file']}", templates),
     }
     if frame_start is not None:
         attrib["frameStart"] = frame_start

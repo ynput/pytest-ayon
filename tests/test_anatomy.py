@@ -6,7 +6,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from pytest_ayon import plugin, server
+from pytest_ayon import plugin, server, utils
 
 ANATOMY = {"roots": [{"name": "work"}], "templates": {"x": 1}}
 
@@ -221,6 +221,52 @@ def test_create_representation_single_file() -> None:
     assert "frameEnd" not in rep["attrib"]
     assert rep["data"]["context"]["ext"] == "abc"
     assert rep["data"]["context"]["representation"] == "abc"
+
+
+REFERENCE_TEMPLATES = {
+    "version_padding": 3,
+    "version": "v{version:0>{@version_padding}}",
+    "frame_padding": 4,
+    "frame": "{frame:0>{@frame_padding}}",
+    "publish": [{
+        "name": "default",
+        "directory": "pub/{@version}",
+        "file": "f_{@version}<.{@frame}>.{ext}",
+    }],
+}
+
+
+def test_create_representation_expands_references() -> None:
+    """Test that `{@...}` references are expanded in the stored template."""
+    rep = server.create_representation(
+        "proj", "P", "folder", "task", "renderMain", 1, "vid",
+        REFERENCE_TEMPLATES, "/mnt/work", "rep",
+        frame_start=1001, frame_end=1002)
+    template = rep["attrib"]["template"]
+    assert "@" not in template
+    assert template == "pub/v{version:0>3}/f_v{version:0>3}<.{frame:0>4}>.{ext}"
+
+
+def test_default_anatomy_templates_have_no_references() -> None:
+    """Test that expanded default anatomy templates contain no `{@`."""
+    templates = server._default_project_anatomy()["templates"]
+    for name in ("publish", "hero"):
+        rep = server.create_representation(
+            "proj", "P", "folder", "task", "renderMain", 1, "vid",
+            templates, "/mnt/work", "rep", template_name=name)
+        assert "{@" not in rep["attrib"]["template"]
+
+
+@pytest.mark.parametrize("template, match", [
+    ("{@missing}", "Unknown template reference"),
+    ("{@publish}", "Unknown template reference"),
+    ("{@a}", "Circular"),
+])
+def test_expand_template_references_invalid(template: str, match: str) -> None:
+    """Test that unknown and circular references are rejected."""
+    templates = {"a": "{@b}", "b": "{@a}", "publish": [{}]}
+    with pytest.raises(ValueError, match=match):
+        utils.expand_template_references(template, templates)
 
 
 def test_create_representation_hero() -> None:
