@@ -138,7 +138,7 @@ def _pick_template(
 _TEMPLATE_REFERENCE = re.compile(r"\{@([^{}]+)\}")
 
 
-def expand_template_references(  # ruff: ignore[docstring-extraneous-exception]
+def expand_template_references(
         template: str,
         templates: dict[str, Any],
         _chain: tuple[str, ...] = ()) -> str:
@@ -157,8 +157,7 @@ def expand_template_references(  # ruff: ignore[docstring-extraneous-exception]
     Returns:
         str: The template with all references expanded.
 
-    Raises:
-        ValueError: If a reference is unknown or circular.
+    Unknown and circular references raise `ValueError`.
 
     """
     def _replace(match: re.Match) -> str:
