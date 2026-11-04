@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import random
+import re
 import uuid
 from pathlib import Path
 from typing import Any, Optional
@@ -62,7 +63,8 @@ def create_file_list(  # ruff: ignore[too-many-arguments, too-many-positional-ar
         *,
         root_name: str = "work",
         product_type: str = "render",
-        template_name: str = "publish") -> list[dict]:
+        template_name: str = "publish",
+        hierarchy: str = "") -> list[dict]:
     """Creates a list of file structures.
 
     One file per frame of the inclusive `frame_start`..`frame_end` range,
@@ -81,6 +83,8 @@ def create_file_list(  # ruff: ignore[too-many-arguments, too-many-positional-ar
         product_type: Product type used in file paths.
         template_name: `publish` or `hero`; hero files use `hero`
             instead of the version in their paths and names.
+        hierarchy: Slash-separated parent folders of the asset, without
+            the asset itself (empty for a top-level folder).
 
     Returns:
         list: List of file structures.
@@ -95,12 +99,15 @@ def create_file_list(  # ruff: ignore[too-many-arguments, too-many-positional-ar
     else:
         file_names = [f"{base_name}.{frame:04d}.{ext}" for frame in frames]
 
+    folder_path = "/".join(
+        part for part in (project_name, hierarchy.strip("/"), asset_name)
+        if part)
     return [
         {
             "id": uuid.uuid4().hex,
             "name": file_name,
             "path": (
-                f"{{root[{root_name}]}}/{project_name}/{asset_name}/publish"
+                f"{{root[{root_name}]}}/{folder_path}/publish"
                 f"/{product_type}/{product_name}/{version_part}/{file_name}"),
             "size": random.randint(100000, 1000000),  # ruff: ignore[suspicious-non-cryptographic-random-usage]
             "hash": hashlib.md5(file_name.encode()).hexdigest(),  # ruff: ignore[hashlib-insecure-hash-function]
@@ -134,6 +141,47 @@ def _pick_template(
     return entries[0]
 
 
+_TEMPLATE_REFERENCE = re.compile(r"\{@([^{}]+)\}")
+
+
+def expand_template_references(
+        template: str,
+        templates: dict[str, Any],
+        _chain: tuple[str, ...] = ()) -> str:
+    """Expand `{@name}` references to other anatomy template entries.
+
+    References point to scalar entries of the anatomy `templates` section,
+    e.g. `{@version}` -> `v{version:0>{@version_padding}}`, which in turn
+    expands to `v{version:0>3}`. Expansion is recursive.
+
+    Args:
+        template (str): Template string, possibly with `{@name}` references.
+        templates (dict[str, Any]): The anatomy `templates` section.
+        _chain (tuple[str, ...]): References being expanded; internal,
+            used to detect circular references.
+
+    Returns:
+        str: The template with all references expanded.
+
+    Unknown and circular references raise `ValueError`.
+
+    """
+    def _replace(match: re.Match) -> str:
+        name = match.group(1)
+        if name in _chain:
+            msg = (f"Circular template reference: "
+                   f"{' -> '.join((*_chain, name))}")
+            raise ValueError(msg)
+        target = templates.get(name)
+        if target is None or isinstance(target, (list, dict)):
+            msg = f"Unknown template reference `{{@{name}}}`"
+            raise ValueError(msg)
+        return expand_template_references(
+            str(target), templates, (*_chain, name))
+
+    return _TEMPLATE_REFERENCE.sub(_replace, template)
+
+
 def create_representation(  # ruff: ignore[too-many-arguments, too-many-positional-arguments]
         project_name: str,
         project_code: str,
@@ -153,7 +201,8 @@ def create_representation(  # ruff: ignore[too-many-arguments, too-many-position
         root_name: str = "work",
         product_type: str = "render",
         task_type: str = "Rendering",
-        task_short: str = "rnd") -> dict:
+        task_short: str = "rnd",
+        hierarchy: str = "") -> dict:
     """Create representation data for `POST /projects/{name}/representations`.
 
     Args:
@@ -176,6 +225,8 @@ def create_representation(  # ruff: ignore[too-many-arguments, too-many-position
         product_type (str): The product type.
         task_type (str): The task type.
         task_short (str): The task type short name.
+        hierarchy (str): Slash-separated parent folders of the folder,
+            without the folder itself (empty for a top-level folder).
 
     Returns:
         dict: The representation data.
@@ -188,7 +239,8 @@ def create_representation(  # ruff: ignore[too-many-arguments, too-many-position
                                  frame_start, frame_end,
                                  root_name=root_name,
                                  product_type=product_type,
-                                 template_name=template_name)
+                                 template_name=template_name,
+                                 hierarchy=hierarchy)
 
     context_data = {
         "ext": ext,
@@ -215,12 +267,13 @@ def create_representation(  # ruff: ignore[too-many-arguments, too-many-position
         },
         "version": version,
         "username": "Test",
-        "hierarchy": "",
+        "hierarchy": hierarchy,
         "representation": ext
     }
 
     attrib: dict[str, Any] = {
-        "template": f"{template['directory']}/{template['file']}",
+        "template": expand_template_references(
+            f"{template['directory']}/{template['file']}", templates),
     }
     if frame_start is not None:
         attrib["frameStart"] = frame_start

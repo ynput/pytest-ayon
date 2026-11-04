@@ -511,6 +511,17 @@ def _create_folder(
         STATUS_OK).json()
 
 
+def _folder_hierarchy(folder_entity: dict[str, Any]) -> str:
+    """Return the parent folder path of a folder, without the folder.
+
+    Returns:
+        str: Slash-separated parents (empty for a top-level folder).
+
+    """
+    path = (folder_entity.get("path") or "").strip("/")
+    return path.rpartition("/")[0]
+
+
 def _create_representations(  # ruff: ignore[too-many-arguments]
         session: requests.Session,
         server_url: str,
@@ -525,7 +536,8 @@ def _create_representations(  # ruff: ignore[too-many-arguments]
         version: int,
         version_id: str,
         anatomy: dict[str, Any],
-        params: dict[str, Any]) -> list[IdNamePair]:
+        params: dict[str, Any],
+        hierarchy: str = "") -> list[IdNamePair]:
     """Create representations for a version.
 
     Returns:
@@ -560,6 +572,7 @@ def _create_representations(  # ruff: ignore[too-many-arguments]
             product_type=product_type,
             task_type=task_type,
             task_short=task_short,
+            hierarchy=hierarchy,
         )
         created = _create_entity(
             session, server_url, project_name, "representations", rep_data)
@@ -681,6 +694,7 @@ def populate_project(
         version_id=version_entity["id"],
         anatomy=anatomy,
         params=params,
+        hierarchy=_folder_hierarchy(folder_entity),
     )
     links = _create_links(
         session, server_url, project_name,
